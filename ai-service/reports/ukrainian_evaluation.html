@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8">
+    <title>Україномовна оцінка моделі</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 24px;
+            color: #1f2937;
+            background: #f8fafc;
+        }
+        h1, h2 {
+            margin-bottom: 12px;
+        }
+        .card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 8px 10px;
+            text-align: left;
+        }
+        th {
+            background: #eef2ff;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+        }
+    </style>
+</head>
+<body>
+    <h1>Україномовна оцінка моделі</h1>
+    <section class="card">
+        <h2>Метрики</h2>
+        <table>
+            <thead>
+                <tr><th>segment</th><th>support_total</th><th>support_spam</th><th>support_ham</th><th>accuracy</th><th>precision</th><th>recall</th><th>f1</th><th>positive_rate_pred</th><th>roc_auc</th><th>pr_auc</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>ukrainian_all_sources_test</td><td>808</td><td>105</td><td>703</td><td>0.995050</td><td>0.990291</td><td>0.971429</td><td>0.980769</td><td>0.127475</td><td>0.997060</td><td>0.993107</td></tr><tr><td>ukrainian_spam_sources_test</td><td>797</td><td>105</td><td>692</td><td>0.994981</td><td>0.990291</td><td>0.971429</td><td>0.980769</td><td>0.129235</td><td>0.997096</td><td>0.993168</td></tr><tr><td>ukrainian_ham_sources_test</td><td>11</td><td>0</td><td>11</td><td>1.000000</td><td>0.000000</td><td>0.000000</td><td>0.000000</td><td>0.000000</td><td></td><td></td></tr><tr><td>ukrainian_ham.csv</td><td>11</td><td>0</td><td>11</td><td>1.000000</td><td>0.000000</td><td>0.000000</td><td>0.000000</td><td>0.000000</td><td></td><td></td></tr><tr><td>ukrainian_spam.csv</td><td>16</td><td>16</td><td>0</td><td>0.937500</td><td>1.000000</td><td>0.937500</td><td>0.967742</td><td>0.937500</td><td></td><td></td></tr><tr><td>ukrainian_spam_dataset.csv</td><td>781</td><td>89</td><td>692</td><td>0.996159</td><td>0.988636</td><td>0.977528</td><td>0.983051</td><td>0.112676</td><td>0.996606</td><td>0.991677</td></tr>
+            </tbody>
+        </table>
+    </section>
+    
+        <section class="card">
+            <h2>Confusion Matrix для українського test subset</h2>
+            <img src="cm_ukrainian_test.png" alt="Confusion Matrix для українського test subset">
+        </section>
+        
+        <section class="card">
+            <h2>ROC Curve для українського test subset</h2>
+            <img src="roc_ukrainian_test.png" alt="ROC Curve для українського test subset">
+        </section>
+        
+        <section class="card">
+            <h2>Precision-Recall Curve для українського test subset</h2>
+            <img src="pr_ukrainian_test.png" alt="Precision-Recall Curve для українського test subset">
+        </section>
+        
+</body>
+</html>

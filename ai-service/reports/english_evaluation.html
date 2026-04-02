@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8">
+    <title>Англомовна оцінка моделі</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 24px;
+            color: #1f2937;
+            background: #f8fafc;
+        }
+        h1, h2 {
+            margin-bottom: 12px;
+        }
+        .card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 8px 10px;
+            text-align: left;
+        }
+        th {
+            background: #eef2ff;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+        }
+    </style>
+</head>
+<body>
+    <h1>Англомовна оцінка моделі</h1>
+    <section class="card">
+        <h2>Метрики</h2>
+        <table>
+            <thead>
+                <tr><th>segment</th><th>support_total</th><th>support_spam</th><th>support_ham</th><th>accuracy</th><th>precision</th><th>recall</th><th>f1</th><th>positive_rate_pred</th><th>roc_auc</th><th>pr_auc</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>english_all_sources_test</td><td>768</td><td>106</td><td>662</td><td>0.989583</td><td>0.990000</td><td>0.933962</td><td>0.961165</td><td>0.130208</td><td>0.995796</td><td>0.985382</td></tr><tr><td>english_spam_sources_test</td><td>106</td><td>106</td><td>0</td><td>0.933962</td><td>1.000000</td><td>0.933962</td><td>0.965854</td><td>0.933962</td><td></td><td></td></tr><tr><td>english_ham_sources_test</td><td>662</td><td>0</td><td>662</td><td>0.998489</td><td>0.000000</td><td>0.000000</td><td>0.000000</td><td>0.001511</td><td></td><td></td></tr><tr><td>spam.csv</td><td>768</td><td>106</td><td>662</td><td>0.989583</td><td>0.990000</td><td>0.933962</td><td>0.961165</td><td>0.130208</td><td>0.995796</td><td>0.985382</td></tr>
+            </tbody>
+        </table>
+    </section>
+    
+        <section class="card">
+            <h2>Confusion Matrix для англомовного test subset</h2>
+            <img src="cm_english_test.png" alt="Confusion Matrix для англомовного test subset">
+        </section>
+        
+        <section class="card">
+            <h2>ROC Curve для англомовного test subset</h2>
+            <img src="roc_english_test.png" alt="ROC Curve для англомовного test subset">
+        </section>
+        
+        <section class="card">
+            <h2>Precision-Recall Curve для англомовного test subset</h2>
+            <img src="pr_english_test.png" alt="Precision-Recall Curve для англомовного test subset">
+        </section>
+        
+</body>
+</html>

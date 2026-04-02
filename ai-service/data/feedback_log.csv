@@ -1,0 +1,15 @@
+﻿timestamp,text,actual_label,predicted_label,user_is_correct
+2026-04-01 20:35:58,Your order #12345 has been shipped and is expected to arrive by Friday. You can track your package using the link provided in your account dashboard. Thank you for shopping with us,ham,spam,False
+2026-04-01 20:46:32,Your order #12345 has been shipped and is expected to arrive by Friday. You can track your package using the link provided in your account dashboard. Thank you for shopping with us.,ham,spam,False
+2026-04-01 20:48:40,"Вам схвалено кредит на суму 50 000 грн під 0%! Отримайте гроші на карту за 5 хвилин без довідок про доходи. Переходьте за посиланням: http://groshi-vsim.top. Поспішайте, пропозиція діє до кінця дня",spam,spam,True
+2026-04-01 20:54:53,"Ваш чек от Epic Сатез виді
+Спасибо!
+Здравствуйте, Владислав!
+Спасибо за покупку!
+Идентификатор счета:
+Е4930460581
+
+Идентификатор заказа: Счет вьіставлен:
+
+( Є відповісти ) ( є» Переслати )
+",ham,ham,True
