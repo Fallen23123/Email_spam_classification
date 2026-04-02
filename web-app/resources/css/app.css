@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --bg-main: #04111d;
+        --bg-alt: #0a1d2d;
+        --surface: rgba(9, 25, 40, 0.76);
+        --surface-strong: rgba(11, 31, 48, 0.92);
+        --surface-soft: rgba(157, 198, 231, 0.08);
+        --border-strong: rgba(149, 191, 224, 0.22);
+        --border-soft: rgba(149, 191, 224, 0.12);
+        --text-main: #ecf7ff;
+        --text-muted: #9ab8ca;
+        --accent: #5eead4;
+        --accent-strong: #22c55e;
+        --accent-warm: #f59e0b;
+        --accent-alert: #f87171;
+        --font-body: 'Bahnschrift', 'Trebuchet MS', sans-serif;
+        --font-display: 'Aptos Display', 'Trebuchet MS', sans-serif;
+    }
+
+    html {
+        min-height: 100%;
+        background:
+            radial-gradient(circle at top, rgba(46, 212, 191, 0.14), transparent 34%),
+            radial-gradient(circle at right, rgba(245, 158, 11, 0.14), transparent 28%),
+            linear-gradient(160deg, #02080f 0%, #05131f 48%, #03121d 100%);
+    }
+
+    body {
+        min-height: 100vh;
+        background: transparent;
+        color: var(--text-main);
+        font-family: var(--font-body);
+        @apply antialiased;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: var(--font-display);
+        letter-spacing: -0.03em;
+    }
+
+    ::selection {
+        background: rgba(94, 234, 212, 0.8);
+        color: #032033;
+    }
+}
+
+@layer components {
+    .surface-panel {
+        background:
+            linear-gradient(180deg, rgba(12, 34, 52, 0.92), rgba(7, 21, 34, 0.88));
+        border: 1px solid var(--border-strong);
+        box-shadow:
+            0 24px 60px rgba(0, 0, 0, 0.28),
+            inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(24px);
+    }
+
+    .surface-panel-soft {
+        background: rgba(10, 28, 44, 0.68);
+        border: 1px solid var(--border-soft);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(18px);
+    }
+
+    .eyebrow {
+        @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em];
+        background: rgba(94, 234, 212, 0.12);
+        color: #97f9ea;
+        border: 1px solid rgba(94, 234, 212, 0.22);
+    }
+
+    .metric-value {
+        @apply text-3xl font-semibold text-slate-50;
+    }
+
+    .metric-label {
+        color: var(--text-muted);
+        @apply text-xs uppercase tracking-[0.24em];
+    }
+
+    .dashboard-frame {
+        background:
+            radial-gradient(circle at top right, rgba(94, 234, 212, 0.08), transparent 28%),
+            radial-gradient(circle at bottom left, rgba(59, 130, 246, 0.08), transparent 24%),
+            linear-gradient(180deg, rgba(13, 22, 36, 0.98), rgba(8, 15, 27, 0.98));
+        border: 1px solid rgba(120, 151, 182, 0.18);
+        box-shadow:
+            0 24px 70px rgba(0, 0, 0, 0.4),
+            inset 0 1px 0 rgba(255, 255, 255, 0.04),
+            0 0 0 1px rgba(82, 127, 163, 0.08);
+    }
+
+    .dashboard-card {
+        background:
+            linear-gradient(180deg, rgba(18, 30, 47, 0.92), rgba(11, 20, 34, 0.94));
+        border: 1px solid rgba(127, 158, 189, 0.18);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.035),
+            0 18px 40px rgba(0, 0, 0, 0.22);
+    }
+
+    .dashboard-subtle {
+        background:
+            linear-gradient(180deg, rgba(19, 33, 50, 0.72), rgba(13, 23, 38, 0.78));
+        border: 1px solid rgba(127, 158, 189, 0.12);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    .dashboard-input {
+        background:
+            linear-gradient(180deg, rgba(59, 69, 86, 0.34), rgba(36, 45, 58, 0.44));
+        border: 1px solid rgba(138, 151, 170, 0.2);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    }
+}
+
+@layer utilities {
+    .text-gradient-signal {
+        background-image: linear-gradient(120deg, #f8fafc 0%, #5eead4 52%, #fbbf24 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    .bg-grid-signal {
+        background-image:
+            linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+        background-size: 42px 42px;
+    }
+
+    .glow-border {
+        box-shadow:
+            0 0 0 1px rgba(94, 234, 212, 0.12),
+            0 18px 48px rgba(15, 118, 110, 0.18);
+    }
+
+    .animate-fade-in-up {
+        animation: fade-in-up 0.6s ease-out both;
+    }
+
+    .shadow-neon {
+        box-shadow:
+            0 0 0 1px rgba(94, 234, 212, 0.08),
+            0 0 30px rgba(94, 234, 212, 0.16);
+    }
+
+    @keyframes fade-in-up {
+        from {
+            opacity: 0;
+            transform: translateY(18px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+}
