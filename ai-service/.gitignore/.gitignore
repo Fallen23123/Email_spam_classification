@@ -4,4 +4,4 @@
 /.env
 __pycache__/
 *.sqlite
-data/feedback.db
+data/feedback.dbgit add ai-service/

@@ -11,14 +11,11 @@ import plotly.express as px
 import pandas as pd
 import sqlite3
 
-from dataset_loader import combine_training_data, load_training_corpora, prepare_feedback_frame
-from runtime_metadata import refresh_runtime_metadata
+from config import DEFAULT_EVALUATION_SCOPE, DEFAULT_THRESHOLD, RETRAIN_THRESHOLD
+from retrain_utils import run_holdout_retrain
 
 # --- КОНФІГУРАЦІЯ НАВЧАННЯ ---
-RETRAIN_THRESHOLD = 5  # Перенавчати модель кожні 5 нових відгуків
 DATA_FILE = "data/feedback_log.csv" 
-DEFAULT_THRESHOLD = 0.5
-DEFAULT_EVALUATION_SCOPE = "full_offline_eval"
 
 # Вказуємо шлях до Tesseract (для Windows)
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
@@ -80,47 +77,52 @@ def retrain_model():
     """Перенавчає модель на всіх базових CSV та нових відгуках користувача."""
     try:
         conn = sqlite3.connect("data/feedback.db")
-        new_data_df = pd.read_sql_query("SELECT text, actual_label as label FROM feedback", conn)
+        feedback_count = pd.read_sql_query("SELECT COUNT(*) AS total FROM feedback", conn)
         conn.close()
 
-        if len(new_data_df) < RETRAIN_THRESHOLD:
+        if int(feedback_count.iloc[0]["total"]) < RETRAIN_THRESHOLD:
             return False
-
-        base_df = load_training_corpora(
-            data_dir="data",
-            ignored_filenames={"feedback_log.csv"},
-        )
-        feedback_df = prepare_feedback_frame(
-            new_data_df,
-            label_column="label",
-            text_column="text",
-            source_name="user_feedback_db",
-        )
-
-        if feedback_df.empty:
-            return False
-
-        combined_df = combine_training_data(
-            base_df,
-            feedback_df=feedback_df,
-            feedback_weight=5,
-        )
-
-        X = combined_df['text'].astype(str)
-        y = combined_df['label'].astype(int)
 
         pipeline, meta = load_artifacts()
-        pipeline.fit(X, y)
-        meta = refresh_runtime_metadata(pipeline, combined_df, previous_meta=meta)
+        result = run_holdout_retrain(
+            pipeline=pipeline,
+            previous_meta=meta,
+            db_path="data/feedback.db",
+            data_dir="data",
+        )
+        if result is None:
+            return False
 
-        joblib.dump(pipeline, "models/spam_pipeline.pkl")
-        joblib.dump(meta, "models/model_meta.pkl")
+        joblib.dump(result["pipeline"], "models/spam_pipeline.pkl")
+        joblib.dump(result["meta"], "models/model_meta.pkl")
         
         st.cache_resource.clear()
         return True
     except Exception as e:
         st.error(f"Помилка під час навчання: {e}")
         return False
+
+def render_feedback_stats(meta):
+    feedback_training_size = int(meta.get("feedback_training_size", 0) or 0)
+    feedback_holdout_excluded = int(meta.get("feedback_holdout_excluded", 0) or 0)
+    if feedback_training_size == 0 and feedback_holdout_excluded == 0:
+        return
+
+    col1, col2 = st.columns(2)
+    col1.metric("Feedback train", feedback_training_size)
+    col2.metric("Feedback holdout", feedback_holdout_excluded)
+
+
+def render_retrain_status(meta):
+    last_retrain = meta.get("last_retrain", "Немає")
+    threshold = float(meta.get("threshold", DEFAULT_THRESHOLD))
+    test_f1 = float(meta.get("test_metrics", {}).get("f1", 0.0) or 0.0)
+
+    st.markdown("#### 🔎 Retrain Status")
+    col1, col2 = st.columns(2)
+    col1.metric("Threshold", f"{threshold:.4f}")
+    col2.metric("Test F1", f"{test_f1:.4f}")
+    st.caption(f"Останнє оновлення: {last_retrain}")
 
 def save_feedback(text: str, is_spam_predicted: bool, is_correct: bool):
     actual_is_spam = is_spam_predicted if is_correct else not is_spam_predicted
@@ -196,6 +198,13 @@ def render_evaluation_scope_badge(scope):
             "text": "#ffedd5",
             "description": "Метрики актуалізовані після фідбеків, але це локальний зріз і згодом бажаний повний ретрейн.",
         },
+        "auto_retrain_holdout": {
+            "label": "Holdout Auto-Retrain",
+            "background": "#1e3a8a",
+            "border": "#60a5fa",
+            "text": "#dbeafe",
+            "description": "Автоперенавчання перевірене на окремому holdout test без leakage з feedback-даних.",
+        },
     }
     badge = badges.get(scope, badges["full_offline_eval"])
     st.markdown(
@@ -227,9 +236,25 @@ with st.sidebar:
     st.markdown("### 🛡️ Spam Detection AI")
     st.caption(f"Останнє навчання: {meta.get('last_retrain', 'При завантаженні')}")
     st.markdown("---")
+
+    if st.button("🔁 Manual Retrain", use_container_width=True):
+        with st.spinner("Оновлюємо модель на holdout-схемі..."):
+            if retrain_model():
+                st.toast("Модель успішно перенавчено.", icon="🧠")
+                st.rerun()
+            else:
+                st.warning(
+                    f"Для ручного retrain потрібно щонайменше {RETRAIN_THRESHOLD} feedback-записів "
+                    "і хоча б частина з них має залишитися поза holdout-фільтром."
+                )
+
+    st.caption("Запускає leakage-free retrain з оцінкою на окремому holdout test.")
+    render_retrain_status(meta)
+    st.markdown("---")
     
     st.markdown("#### 📊 Статистика")
     render_evaluation_scope_badge(evaluation_scope)
+    render_feedback_stats(meta)
     col1, col2, col3 = st.columns(3)
     col1.metric("Всього", st.session_state.total_checked)
     col2.metric("Спам", st.session_state.spam_count)

@@ -24,22 +24,22 @@ from sklearn.metrics import (
     roc_curve,
     precision_recall_curve,
 )
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_validate
+from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.naive_bayes import ComplementNB
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
 
+from config import FULL_TRAIN_FEEDBACK_WEIGHT, LINEAR_SVM_MAX_ITER, RANDOM_STATE
 from dataset_loader import (
     combine_training_data,
     discover_dataset_files,
+    filter_feedback_for_training,
     prepare_feedback_frame,
     read_csv_safe,
+    split_base_dataframe,
     standardize_dataset_frame,
 )
 from preprocessor import SpamPreprocessor
-
-
-RANDOM_STATE = 42
 
 
 def ensure_directories():
@@ -450,59 +450,68 @@ def main():
     ensure_directories()
 
     print("1. Завантаження корпусів...")
-    df = load_corpora()
+    base_df = load_corpora()
 
-    # =====================================================================
-    # НОВИЙ БЛОК: Інтеграція відгуків користувачів (Active Learning)
-    # =====================================================================
+    print(f"Загальний розмір базової вибірки: {base_df.shape[0]}")
+    print("Розподіл класів:")
+    print(base_df["label"].value_counts(normalize=True))
+
+    train_df, val_df, test_df = split_base_dataframe(
+        base_df,
+        random_state=RANDOM_STATE,
+    )
+
+    feedback_df = pd.DataFrame(columns=["label", "text", "source"])
+    feedback_weight_multiplier = FULL_TRAIN_FEEDBACK_WEIGHT
+    feedback_excluded_from_holdout = 0
     feedback_file = "data/feedback_log.csv"
+
     if os.path.exists(feedback_file):
         print("\n[INFO] Знайдено файл з відгуками користувачів. Інтеграція нових знань...")
         try:
             feedback_raw = read_csv_safe(feedback_file)
-            feedback_df = prepare_feedback_frame(
+            raw_feedback_df = prepare_feedback_frame(
                 feedback_raw,
                 label_column="actual_label",
                 text_column="text",
                 source_name="user_feedback",
             )
+            feedback_df = filter_feedback_for_training(
+                raw_feedback_df,
+                holdout_frames=[val_df, test_df],
+            )
+            feedback_excluded_from_holdout = len(raw_feedback_df) - len(feedback_df)
 
             if not feedback_df.empty:
-                weight_multiplier = 3
-                df = combine_training_data(
-                    df,
-                    feedback_df=feedback_df,
-                    feedback_weight=weight_multiplier,
+                print(f"[OK] Додано {len(feedback_df)} унікальних виправлень у train.")
+                print(
+                    "[INFO] "
+                    f"{feedback_excluded_from_holdout} виправлень відсічено від validation/test, "
+                    "щоб уникнути leakage."
                 )
-                print(f"[OK] Успішно додано {len(feedback_df)} унікальних виправлень.")
-                print(f"[INFO] Вагу виправлень збільшено у {weight_multiplier} рази для кращого засвоєння.\n")
+                print(
+                    f"[INFO] Вагу виправлень збільшено у {feedback_weight_multiplier} рази.\n"
+                )
+            else:
+                print("[INFO] Усі feedback-приклади відфільтровано з holdout-зон.\n")
         except Exception as e:
             print(f"[WARN] Не вдалося обробити файл відгуків: {e}")
-    # =====================================================================
 
-    print(f"Загальний розмір вибірки: {df.shape[0]}")
-    print("Розподіл класів:")
-    print(df["label"].value_counts(normalize=True))
-
-    train_val_df, test_df = train_test_split(
-        df,
-        test_size=0.15,
-        random_state=RANDOM_STATE,
-        stratify=df["label"],
+    train_with_feedback_df = combine_training_data(
+        train_df,
+        feedback_df=feedback_df,
+        feedback_weight=feedback_weight_multiplier,
     )
 
-    train_df, val_df = train_test_split(
-        train_val_df,
-        test_size=0.1765,
-        random_state=RANDOM_STATE,
-        stratify=train_val_df["label"],
-    )
-
-    X_train, y_train = train_df["text"], train_df["label"]
+    X_train, y_train = train_with_feedback_df["text"], train_with_feedback_df["label"]
     X_val, y_val = val_df["text"], val_df["label"]
     X_test, y_test = test_df["text"], test_df["label"]
 
-    print(f"Train: {len(X_train)} | Validation: {len(X_val)} | Test: {len(X_test)}")
+    print(
+        "Base split sizes: "
+        f"train={len(train_df)} | validation={len(X_val)} | test={len(X_test)}"
+    )
+    print(f"Навчальний розмір після feedback-weighting: {len(X_train)}")
 
     models = {
         "ComplementNB": ComplementNB(alpha=0.6),
@@ -513,7 +522,11 @@ def main():
             random_state=RANDOM_STATE,
         ),
         "LinearSVM_Calibrated": CalibratedClassifierCV(
-            LinearSVC(class_weight="balanced", random_state=RANDOM_STATE),
+            LinearSVC(
+                class_weight="balanced",
+                max_iter=LINEAR_SVM_MAX_ITER,
+                random_state=RANDOM_STATE,
+            ),
             method="sigmoid",
             cv=3,
         ),
@@ -598,15 +611,28 @@ def main():
 
     best_name = results_df.loc[0, "model"]
     best_threshold = float(results_df.loc[0, "threshold"])
-    best_pipeline = trained[best_name]["pipeline"]
-
     print(f"\n4. Найкраща модель: {best_name}")
     print(f"Оптимальний поріг: {best_threshold:.4f}")
 
-    test_scores = best_pipeline.predict_proba(X_test)[:, 1]
+    print("\n5. Навчання фінальної pipeline на train+validation без leakage у test...")
+    final_train_df = combine_training_data(
+        pd.concat([train_df, val_df], ignore_index=True),
+        feedback_df=feedback_df,
+        feedback_weight=feedback_weight_multiplier,
+    )
+
+    final_pipeline = Pipeline(
+        [
+            ("prep", SpamPreprocessor()),
+            ("clf", clone(models[best_name])),
+        ]
+    )
+    final_pipeline.fit(final_train_df["text"], final_train_df["label"])
+
+    test_scores = final_pipeline.predict_proba(X_test)[:, 1]
     test_metrics = evaluate_scores(y_test, test_scores, best_threshold)
 
-    print("\n5. Результати на тестовій вибірці:")
+    print("\n6. Результати на незалежній тестовій вибірці:")
     print(f"Accuracy:  {test_metrics['accuracy']:.4f}")
     print(f"Precision: {test_metrics['precision']:.4f}")
     print(f"Recall:    {test_metrics['recall']:.4f}")
@@ -625,18 +651,18 @@ def main():
 
     ukrainian_eval_df = build_ukrainian_evaluation_report(
         test_df=test_df,
-        pipeline=best_pipeline,
+        pipeline=final_pipeline,
         threshold=best_threshold,
     )
     english_eval_df = build_english_evaluation_report(
         test_df=test_df,
-        pipeline=best_pipeline,
+        pipeline=final_pipeline,
         threshold=best_threshold,
     )
     evaluation_reports_meta = {}
     if not ukrainian_eval_df.empty:
         ukrainian_test_df = test_df[test_df["source"].str.startswith("ukrainian_", na=False)].copy()
-        ukrainian_scores = best_pipeline.predict_proba(ukrainian_test_df["text"])[:, 1]
+        ukrainian_scores = final_pipeline.predict_proba(ukrainian_test_df["text"])[:, 1]
         ukrainian_pred = (ukrainian_scores >= best_threshold).astype(int)
 
         ukrainian_eval_df.to_csv("reports/ukrainian_evaluation.csv", index=False)
@@ -691,7 +717,7 @@ def main():
 
     if not english_eval_df.empty:
         english_test_df = test_df[test_df["source"].isin(["spam.csv"])].copy()
-        english_scores = best_pipeline.predict_proba(english_test_df["text"])[:, 1]
+        english_scores = final_pipeline.predict_proba(english_test_df["text"])[:, 1]
         english_pred = (english_scores >= best_threshold).astype(int)
 
         english_eval_df.to_csv("reports/english_evaluation.csv", index=False)
@@ -755,28 +781,17 @@ def main():
         evaluation_summary=compact_summary,
     )
 
-    print("\n6. Навчання фінальної pipeline на train+validation...")
-    X_full_train = pd.concat([X_train, X_val], axis=0)
-    y_full_train = pd.concat([y_train, y_val], axis=0)
-
-    final_pipeline = Pipeline(
-        [
-            ("prep", SpamPreprocessor()),
-            ("clf", clone(models[best_name])),
-        ]
-    )
-
-    final_pipeline.fit(X_full_train, y_full_train)
-
     joblib.dump(final_pipeline, "models/spam_pipeline.pkl")
     joblib.dump(
         {
             "model_name": best_name,
             "threshold": best_threshold,
-            "train_size": int(len(X_train)),
+            "train_size": int(len(final_train_df)),
             "validation_size": int(len(X_val)),
             "test_size": int(len(X_test)),
             "evaluation_scope": "full_offline_eval",
+            "feedback_training_size": int(len(feedback_df)),
+            "feedback_holdout_excluded": int(feedback_excluded_from_holdout),
             "test_metrics": {
                 "accuracy": float(test_metrics["accuracy"]),
                 "precision": float(test_metrics["precision"]),

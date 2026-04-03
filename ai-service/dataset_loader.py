@@ -4,10 +4,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_IGNORED_FILES = {"feedback_log.csv"}
+DEFAULT_RANDOM_STATE = 42
+DEFAULT_TEST_SIZE = 0.15
+DEFAULT_VALIDATION_SIZE = 0.15
 
 LABEL_COLUMN_CANDIDATES = (
     "label",
@@ -216,11 +220,88 @@ def load_training_corpora(data_dir=DEFAULT_DATA_DIR, ignored_filenames=None):
     return combined
 
 
+def split_base_dataframe(
+    df,
+    random_state=DEFAULT_RANDOM_STATE,
+    test_size=DEFAULT_TEST_SIZE,
+    validation_size=DEFAULT_VALIDATION_SIZE,
+):
+    if df.empty:
+        raise ValueError("Неможливо розбити порожній датасет.")
+
+    if not 0 < test_size < 1:
+        raise ValueError("test_size має бути в межах (0, 1).")
+
+    if not 0 < validation_size < 1:
+        raise ValueError("validation_size має бути в межах (0, 1).")
+
+    if validation_size >= 1 - test_size:
+        raise ValueError("validation_size має залишати місце для train-підмножини.")
+
+    train_val_df, test_df = train_test_split(
+        df,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=df["label"],
+    )
+
+    relative_validation_size = validation_size / (1 - test_size)
+    train_df, val_df = train_test_split(
+        train_val_df,
+        test_size=relative_validation_size,
+        random_state=random_state,
+        stratify=train_val_df["label"],
+    )
+
+    return (
+        train_df.reset_index(drop=True),
+        val_df.reset_index(drop=True),
+        test_df.reset_index(drop=True),
+    )
+
+
+def filter_feedback_for_training(feedback_df, holdout_frames=None):
+    if feedback_df is None or feedback_df.empty:
+        return pd.DataFrame(columns=["label", "text", "source"])
+
+    filtered = feedback_df.copy()
+    filtered["text"] = normalize_text_series(filtered["text"])
+    filtered = filtered.dropna(subset=["label"])
+    filtered = filtered[filtered["text"].str.len() >= 5].copy()
+
+    blocked_texts = set()
+    for frame in holdout_frames or []:
+        if frame is None or frame.empty or "text" not in frame.columns:
+            continue
+        blocked_texts.update(normalize_text_series(frame["text"]).tolist())
+
+    if blocked_texts:
+        filtered = filtered[~filtered["text"].isin(blocked_texts)].copy()
+
+    if "timestamp" in filtered.columns:
+        filtered = filtered.sort_values("timestamp")
+
+    filtered = filtered.drop_duplicates(subset=["text"], keep="last").reset_index(drop=True)
+    filtered["label"] = filtered["label"].astype(int)
+
+    return filtered
+
+
 def combine_training_data(base_df, feedback_df=None, feedback_weight=1):
-    frames = [base_df]
+    base = base_df.copy()
+    base["text"] = normalize_text_series(base["text"])
+    base = base.dropna(subset=["label"])
+    base = base[base["text"].str.len() >= 5].reset_index(drop=True)
+    base["label"] = base["label"].astype(int)
+
+    frames = [base]
 
     if feedback_df is not None and not feedback_df.empty:
-        frames.extend([feedback_df.copy()] * max(int(feedback_weight), 1))
+        feedback = filter_feedback_for_training(feedback_df)
+        if not feedback.empty:
+            base = base[~base["text"].isin(set(feedback["text"]))].copy()
+            frames = [base]
+            frames.extend([feedback.copy()] * max(int(feedback_weight), 1))
 
     combined = pd.concat(frames, ignore_index=True)
     combined["text"] = normalize_text_series(combined["text"])

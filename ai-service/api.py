@@ -8,8 +8,8 @@ import os
 import threading
 from datetime import datetime
 
-from dataset_loader import combine_training_data, load_training_corpora, prepare_feedback_frame
-from runtime_metadata import refresh_runtime_metadata
+from config import DEFAULT_THRESHOLD, RETRAIN_THRESHOLD
+from retrain_utils import load_feedback_rows_from_db, run_holdout_retrain
 
 app = FastAPI()
 
@@ -17,8 +17,6 @@ app = FastAPI()
 DB_PATH = "data/feedback.db"
 MODEL_PATH = "models/spam_pipeline.pkl"
 META_PATH = "models/model_meta.pkl"
-RETRAIN_THRESHOLD = 5
-DEFAULT_THRESHOLD = 0.5
 
 # Глобальні змінні для моделі
 pipeline = joblib.load(MODEL_PATH)
@@ -134,37 +132,21 @@ def retrain_logic():
         return False
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        new_data_df = pd.read_sql_query("SELECT text, actual_label as label FROM feedback", conn)
-        conn.close()
-
-        base_df = load_training_corpora(
-            data_dir="data",
-            ignored_filenames={"feedback_log.csv"},
-        )
-        feedback_df = prepare_feedback_frame(
-            new_data_df,
-            label_column="label",
-            text_column="text",
-            source_name="user_feedback_db",
-        )
-
-        if feedback_df.empty:
+        feedback_rows = load_feedback_rows_from_db(DB_PATH)
+        if feedback_rows.empty:
             return False
 
-        combined_df = combine_training_data(
-            base_df,
-            feedback_df=feedback_df,
-            feedback_weight=5,
-        )
-
-        X = combined_df['text'].astype(str)
-        y = combined_df['label'].astype(int)
-
         with MODEL_LOCK:
-            # Навчаємо
-            pipeline.fit(X, y)
-            meta = refresh_runtime_metadata(pipeline, combined_df, previous_meta=meta)
+            result = run_holdout_retrain(
+                pipeline=pipeline,
+                previous_meta=meta,
+                db_path=DB_PATH,
+                data_dir="data",
+            )
+            if result is None:
+                return False
+            pipeline = result["pipeline"]
+            meta = result["meta"]
             
             # Зберігаємо на диск
             joblib.dump(pipeline, MODEL_PATH)
@@ -225,6 +207,8 @@ def get_model_meta():
             "threshold": meta.get("threshold"),
             "last_retrain": meta.get("last_retrain"),
             "evaluation_scope": meta.get("evaluation_scope"),
+            "feedback_training_size": meta.get("feedback_training_size", 0),
+            "feedback_holdout_excluded": meta.get("feedback_holdout_excluded", 0),
             "test_metrics": meta.get("test_metrics", {}),
             "evaluation_summary": meta.get("evaluation_summary", {}),
             "dashboard_summary": meta.get("dashboard_summary", {}),

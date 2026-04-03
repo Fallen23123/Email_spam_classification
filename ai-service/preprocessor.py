@@ -1,6 +1,7 @@
 import re
 
-from scipy.sparse import hstack
+import numpy as np
+from scipy.sparse import csr_matrix, hstack
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 from sklearn.utils.validation import check_is_fitted
@@ -86,6 +87,13 @@ UKRAINIAN_STOP_WORDS = {
 
 TOKEN_PATTERN = re.compile(r"(?u)[^\W\d_]+(?:['’`-][^\W\d_]+)*")
 PHONE_PATTERN = re.compile(r"\+?\d[\d\-\(\)\s]{7,}\d")
+URL_PATTERN = re.compile(r"(http|https)://\S+|www\.\S+", flags=re.IGNORECASE)
+EMAIL_PATTERN = re.compile(r"\b[\w\.-]+@[\w\.-]+\.\w+\b", flags=re.UNICODE)
+HTML_PATTERN = re.compile(r"<[^>]+>")
+CURRENCY_PATTERN = re.compile(r"[$€£₴¥]+")
+PERCENT_PATTERN = re.compile(r"\b\d+\s*%|\b\d+\s*відсотк\w*\b", flags=re.IGNORECASE)
+REPEATED_PUNCT_PATTERN = re.compile(r"([!?])\1{1,}")
+UPPERCASE_WORD_PATTERN = re.compile(r"\b[A-ZА-ЯІЇЄҐ]{2,}\b")
 
 PROTECTED_TOKENS = {
     "htmltoken",
@@ -176,6 +184,53 @@ MULTILINGUAL_STOP_WORDS = sorted(
     _normalize_stop_words(ENGLISH_STOP_WORDS.union(UKRAINIAN_STOP_WORDS))
 )
 
+SPAM_HINT_KEYWORDS = (
+    "urgent",
+    "winner",
+    "claim",
+    "bonus",
+    "free",
+    "offer",
+    "limited time",
+    "act now",
+    "verify",
+    "account suspended",
+    "click",
+    "crypto",
+    "loan",
+    "кредит",
+    "позика",
+    "акція",
+    "знижка",
+    "виграли",
+    "терміново",
+    "підтверд",
+    "перейдіть",
+    "без довідок",
+    "на карту",
+    "гарантовано",
+)
+
+STRUCTURAL_FEATURE_NAMES = (
+    "char_len_log",
+    "token_count_log",
+    "url_count_log",
+    "email_count_log",
+    "phone_count_log",
+    "currency_count_log",
+    "percent_count_log",
+    "digit_ratio",
+    "uppercase_ratio",
+    "exclamation_count_log",
+    "question_count_log",
+    "line_break_count_log",
+    "repeated_punct_count_log",
+    "uppercase_word_ratio",
+    "long_token_ratio",
+    "unique_token_ratio",
+    "spam_keyword_hits_log",
+)
+
 
 class SpamPreprocessor(BaseEstimator, TransformerMixin):
     def __init__(
@@ -186,7 +241,8 @@ class SpamPreprocessor(BaseEstimator, TransformerMixin):
         min_df=1,
         word_min_df=2,
         char_min_df=1,
-        max_df=0.98
+        max_df=0.98,
+        include_structural_features=True,
     ):
         self.max_word_features = max_word_features
         self.max_char_features = max_char_features
@@ -195,6 +251,7 @@ class SpamPreprocessor(BaseEstimator, TransformerMixin):
         self.word_min_df = word_min_df
         self.char_min_df = char_min_df
         self.max_df = max_df
+        self.include_structural_features = include_structural_features
 
     def normalize_token(self, token):
         token = str(token).strip().lower()
@@ -216,23 +273,59 @@ class SpamPreprocessor(BaseEstimator, TransformerMixin):
         text = str(text).lower().strip()
         text = text.replace("’", "'").replace("`", "'")
 
-        text = re.sub(r"<[^>]+>", " htmltoken ", text)
-        text = re.sub(r"(http|https)://\S+|www\.\S+", " urltoken ", text)
+        text = HTML_PATTERN.sub(" htmltoken ", text)
+        text = URL_PATTERN.sub(" urltoken ", text)
         text = PHONE_PATTERN.sub(" phonetoken ", text)
-        text = re.sub(
-            r"\b[\w\.-]+@[\w\.-]+\.\w+\b",
-            " emailtoken ",
-            text,
-            flags=re.UNICODE,
-        )
-        text = re.sub(r"[$€£₴¥]+", " currencytoken ", text)
-        text = re.sub(r"\b\d+[%]\b|\b\d+\s*відсотк\w*\b", " percenttoken ", text)
+        text = EMAIL_PATTERN.sub(" emailtoken ", text)
+        text = CURRENCY_PATTERN.sub(" currencytoken ", text)
+        text = PERCENT_PATTERN.sub(" percenttoken ", text)
         text = re.sub(r"\d+", " numtoken ", text)
 
         text = re.sub(r"[^\w\s!?%'\-]", " ", text, flags=re.UNICODE)
         text = re.sub(r"\s+", " ", text).strip()
 
         return text
+
+    def structural_feature_names(self):
+        return STRUCTURAL_FEATURE_NAMES
+
+    def extract_structural_features(self, text):
+        raw_text = str(text or "").strip()
+        lowered_text = raw_text.lower()
+        cleaned_text = self.clean_text(raw_text)
+        tokens = self.multilingual_tokenize(cleaned_text)
+
+        letter_count = sum(char.isalpha() for char in raw_text)
+        uppercase_count = sum(char.isupper() for char in raw_text if char.isalpha())
+        digit_count = sum(char.isdigit() for char in raw_text)
+        token_count = len(tokens)
+        long_token_count = sum(len(token) >= 12 for token in tokens)
+        unique_token_ratio = (len(set(tokens)) / token_count) if token_count else 0.0
+        uppercase_word_count = len(UPPERCASE_WORD_PATTERN.findall(raw_text))
+        keyword_hits = sum(1 for keyword in SPAM_HINT_KEYWORDS if keyword in lowered_text)
+
+        return np.array(
+            [
+                np.log1p(len(raw_text)),
+                np.log1p(token_count),
+                np.log1p(len(URL_PATTERN.findall(raw_text))),
+                np.log1p(len(EMAIL_PATTERN.findall(raw_text))),
+                np.log1p(len(PHONE_PATTERN.findall(raw_text))),
+                np.log1p(len(CURRENCY_PATTERN.findall(raw_text))),
+                np.log1p(len(PERCENT_PATTERN.findall(lowered_text))),
+                digit_count / max(len(raw_text), 1),
+                uppercase_count / max(letter_count, 1),
+                np.log1p(raw_text.count("!")),
+                np.log1p(raw_text.count("?")),
+                np.log1p(raw_text.count("\n")),
+                np.log1p(len(REPEATED_PUNCT_PATTERN.findall(raw_text))),
+                uppercase_word_count / max(token_count, 1),
+                long_token_count / max(token_count, 1),
+                unique_token_ratio,
+                np.log1p(keyword_hits),
+            ],
+            dtype=float,
+        )
 
     def fit(self, X, y=None):
         cleaned = [self.clean_text(x) for x in X]
@@ -274,6 +367,8 @@ class SpamPreprocessor(BaseEstimator, TransformerMixin):
         self.word_vectorizer_.fit(cleaned)
         self.char_vectorizer_wb_.fit(cleaned)
         self.char_vectorizer_dense_.fit(cleaned)
+        self.include_structural_features_ = bool(self.include_structural_features)
+        self.structural_feature_names_ = self.structural_feature_names()
         return self
 
     def transform(self, X):
@@ -287,7 +382,17 @@ class SpamPreprocessor(BaseEstimator, TransformerMixin):
         x_char_wb = self.char_vectorizer_wb_.transform(cleaned)
         x_char_dense = self.char_vectorizer_dense_.transform(cleaned)
 
-        return hstack([x_word, x_char_wb, x_char_dense]).tocsr()
+        parts = [x_word, x_char_wb, x_char_dense]
+
+        # Older pickled preprocessors do not have this flag and must keep
+        # their original feature dimensionality when loaded from disk.
+        if getattr(self, "include_structural_features_", False):
+            x_structural = csr_matrix(
+                np.vstack([self.extract_structural_features(text) for text in X])
+            )
+            parts.append(x_structural)
+
+        return hstack(parts).tocsr()
 
     def fit_transform(self, X, y=None):
         return self.fit(X, y).transform(X)

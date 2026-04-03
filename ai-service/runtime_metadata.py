@@ -187,15 +187,29 @@ def build_dashboard_summary(model_name, threshold, evaluation_summary):
     }
 
 
-def refresh_runtime_metadata(pipeline, combined_df, previous_meta=None):
+def refresh_runtime_metadata(
+    pipeline,
+    evaluation_df,
+    threshold,
+    previous_meta=None,
+    train_size=0,
+    validation_size=0,
+    test_size=None,
+    total_samples_trained=None,
+    evaluation_scope="auto_retrain_holdout",
+):
     previous_meta = dict(previous_meta or {})
 
-    scores = pipeline.predict_proba(combined_df["text"])[:, 1]
-    threshold = find_best_threshold(combined_df["label"], scores)
-    overall_metrics = evaluate_scores(combined_df["label"], scores, threshold)
+    if evaluation_df.empty:
+        raise ValueError("Неможливо порахувати метрики на порожньому evaluation_df.")
 
-    ukrainian_df = combined_df[combined_df["source"].str.startswith("ukrainian_", na=False)].copy()
-    english_df = combined_df[combined_df["source"].eq("spam.csv")].copy()
+    scores = pipeline.predict_proba(evaluation_df["text"])[:, 1]
+    overall_metrics = evaluate_scores(evaluation_df["label"], scores, threshold)
+
+    ukrainian_df = evaluation_df[
+        evaluation_df["source"].str.startswith("ukrainian_", na=False)
+    ].copy()
+    english_df = evaluation_df[evaluation_df["source"].eq("spam.csv")].copy()
 
     ukrainian_report_df = build_segment_report(
         subset_df=ukrainian_df,
@@ -229,11 +243,14 @@ def refresh_runtime_metadata(pipeline, combined_df, previous_meta=None):
         {
             "threshold": float(threshold),
             "last_retrain": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "total_samples_trained": int(len(combined_df)),
-            "train_size": int(len(combined_df)),
-            "validation_size": 0,
-            "test_size": 0,
-            "evaluation_scope": "auto_retrain_snapshot",
+            "total_samples_trained": int(
+                total_samples_trained if total_samples_trained is not None else train_size
+            ),
+            "train_size": int(train_size),
+            "validation_size": int(validation_size),
+            "test_size": int(test_size if test_size is not None else len(evaluation_df)),
+            "evaluation_scope": evaluation_scope,
+            "test_metrics": overall_metrics,
             "evaluation_summary": evaluation_summary,
             "dashboard_summary": dashboard_summary,
             "evaluation_reports": {
