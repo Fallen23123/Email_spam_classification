@@ -63,11 +63,15 @@ Route::middleware('auth')->group(function () {
  */
 Route::post('/check-spam', function (Request $request) {
     $text = $request->input('text');
+    $sender = $request->input('sender');
+    $senderDomain = $request->input('senderDomain');
 
     try {
         // Звертаємося до нашого Python-сервера на порту 9000
         $response = Http::timeout(10)->post('http://127.0.0.1:9000/analyze', [
-            'text' => $text
+            'text' => $text,
+            'sender' => $sender,
+            'sender_domain' => $senderDomain,
         ]);
 
         if ($response->successful()) {
@@ -102,6 +106,8 @@ Route::post('/save-feedback', function (Request $request) {
         'score'     => 'required|numeric',
         'isSpam'    => 'required|boolean',
         'isCorrect' => 'required|boolean',
+        'sender'    => 'nullable|string',
+        'senderDomain' => 'nullable|string',
     ]);
 
     // 1. Створення запису в таблиці feedback на сайті
@@ -114,17 +120,43 @@ Route::post('/save-feedback', function (Request $request) {
     ]);
 
     // 2. 🧠 ВІДПРАВЛЯЄМО В PYTHON (на порт 9000), ЩОБ МОДЕЛЬ ПЕРЕНАВЧИЛАСЯ
+    $pythonLearnMeta = [
+        'retrain_scheduled' => false,
+        'retrain_in_progress' => false,
+        'retrain_started_at' => null,
+        'retrain_last_finished_at' => null,
+        'retrain_last_status' => null,
+        'retrain_last_error' => null,
+    ];
+
     try {
-        Http::timeout(5)->post('http://127.0.0.1:9000/learn', [
+        $pythonResponse = Http::timeout(5)->post('http://127.0.0.1:9000/learn', [
             'text' => $validated['text'],
             'is_spam_predicted' => $validated['isSpam'],
-            'is_correct' => $validated['isCorrect']
+            'is_correct' => $validated['isCorrect'],
+            'sender' => $validated['sender'] ?? null,
+            'sender_domain' => $validated['senderDomain'] ?? null,
         ]);
+
+        if ($pythonResponse->successful()) {
+            $pythonData = $pythonResponse->json();
+            $pythonLearnMeta = [
+                'retrain_scheduled' => (bool) ($pythonData['retrain_scheduled'] ?? false),
+                'retrain_in_progress' => (bool) ($pythonData['retrain_in_progress'] ?? false),
+                'retrain_started_at' => $pythonData['retrain_started_at'] ?? null,
+                'retrain_last_finished_at' => $pythonData['retrain_last_finished_at'] ?? null,
+                'retrain_last_status' => $pythonData['retrain_last_status'] ?? null,
+                'retrain_last_error' => $pythonData['retrain_last_error'] ?? null,
+            ];
+        }
     } catch (\Exception $e) {
         // Якщо Python-сервіс недоступний, ми просто ігноруємо помилку, щоб сайт не "впав"
     }
 
-    return response()->json(['status' => 'success']);
+    return response()->json([
+        'status' => 'success',
+        ...$pythonLearnMeta,
+    ]);
 })->middleware(['auth']);
 
 // Стандартні маршрути аутентифікації (Login, Register тощо)

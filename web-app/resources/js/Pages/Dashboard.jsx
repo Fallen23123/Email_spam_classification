@@ -12,6 +12,86 @@ const modelRows = [
     'ROE-AUT. 0.9556',
 ];
 
+const decisionSourceBadges = {
+    model: {
+        label: 'Model',
+        className: 'border-slate-400/30 bg-slate-400/10 text-slate-100',
+    },
+    hot_memory: {
+        label: 'Hot Memory',
+        className: 'border-amber-400/30 bg-amber-400/10 text-amber-100',
+    },
+    safe_business_rule: {
+        label: 'Safe Business Rule',
+        className: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
+    },
+};
+
+const buildReadableSummary = (result) => {
+    if (!result) return null;
+
+    const riskySignals = [...(result.subjectSignals || []), ...(result.bodySignals || [])].slice(0, 4);
+    const safeSignals = [...(result.subjectSafeSignals || []), ...(result.bodySafeSignals || [])].slice(0, 4);
+
+    if (result.decisionSource === 'safe_business_rule' && result.ruleLabel) {
+        const details = safeSignals.length > 0 ? ` Безпечні сигнали: ${safeSignals.join(', ')}.` : '';
+        return `Ймовірно безпечний лист, оскільки він збігся з профілем "${result.ruleLabel}".${details}`;
+    }
+
+    if (result.isSpam) {
+        if (riskySignals.length > 0) {
+            return `Лист виглядає підозріло, оскільки модель знайшла spam-сигнали: ${riskySignals.join(', ')}.`;
+        }
+        return 'Лист виглядає підозріло, оскільки оцінка моделі перевищила spam-поріг.';
+    }
+
+    if (safeSignals.length > 0) {
+        return `Ймовірно безпечний лист, оскільки модель знайшла ham-сигнали: ${safeSignals.join(', ')}.`;
+    }
+
+    return 'Ймовірно безпечний лист, оскільки оцінка моделі залишилась нижче spam-порогу.';
+};
+
+const buildRetrainSummary = (retrainStatus) => {
+    if (!retrainStatus) return null;
+
+    if (retrainStatus.inProgress) {
+        const startedAt = retrainStatus.startedAt ? ` Старт: ${retrainStatus.startedAt}.` : '';
+        return {
+            title: 'Модель оновлюється у фоні',
+            body: `Автоперенавчання зараз виконується, але аналіз продовжує працювати на поточній версії моделі.${startedAt}`,
+            className: 'border-sky-400/20 bg-sky-400/10 text-sky-100',
+        };
+    }
+
+    if (retrainStatus.lastStatus === 'error') {
+        const details = retrainStatus.lastError ? ` Деталі: ${retrainStatus.lastError}` : '';
+        return {
+            title: 'Автоперенавчання завершилось з помилкою',
+            body: `Остання спроба оновлення моделі не завершилась успішно.${details}`,
+            className: 'border-rose-400/20 bg-rose-400/10 text-rose-100',
+        };
+    }
+
+    if (retrainStatus.lastStatus === 'success' && retrainStatus.lastFinishedAt) {
+        return {
+            title: 'Останнє автоперенавчання завершено',
+            body: `Модель успішно оновилась у фоні. Завершення: ${retrainStatus.lastFinishedAt}.`,
+            className: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100',
+        };
+    }
+
+    if (retrainStatus.lastStatus === 'scheduled') {
+        return {
+            title: 'Автоперенавчання заплановано',
+            body: 'Python уже прийняв запит на оновлення моделі й запустить його у фоновому режимі.',
+            className: 'border-cyan-400/20 bg-cyan-400/10 text-cyan-100',
+        };
+    }
+
+    return null;
+};
+
 // ОНОВЛЕНО: приймаємо initialHistory та initialStats з бекенду (з бази даних)
 export default function Dashboard({ auth, initialHistory = [], initialStats = { total: 0, spam: 0, safe: 0 } }) {
     const [text, setText] = useState('');
@@ -33,6 +113,7 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
     
     const [feedbackGiven, setFeedbackGiven] = useState(false);
     const [uploadedFileName, setUploadedFileName] = useState('');
+    const [retrainStatus, setRetrainStatus] = useState(null);
     
     // Меню закрите за замовчуванням
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -88,6 +169,26 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                 isSpam,
                 threshold,
                 keywords: response.data.keywords || [],
+                decisionSource: response.data.decision_source || 'model',
+                ruleLabel: response.data.rule_label || null,
+                reason: response.data.reason || null,
+                matchedSignals: response.data.matched_signals || [],
+                subjectSignals: response.data.subject_signals || [],
+                bodySignals: response.data.body_signals || [],
+                subjectSafeSignals: response.data.subject_safe_signals || [],
+                bodySafeSignals: response.data.body_safe_signals || [],
+                metadataSignals: response.data.metadata_signals || [],
+                cacheHit: Boolean(response.data.cache_hit),
+                explainabilityIncluded: Boolean(response.data.explainability_included),
+                explainabilityReason: response.data.explainability_reason || null,
+                timings: response.data.timings_ms || {},
+            });
+            setRetrainStatus({
+                inProgress: Boolean(response.data.retrain_in_progress),
+                startedAt: response.data.retrain_started_at || null,
+                lastFinishedAt: response.data.retrain_last_finished_at || null,
+                lastStatus: response.data.retrain_last_status || null,
+                lastError: response.data.retrain_last_error || null,
             });
             setStats((prev) => ({
                 total: prev.total + 1,
@@ -111,11 +212,18 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
     const handleFeedback = async (isCorrect) => {
         if (!result) return;
         try {
-            await axios.post('/save-feedback', {
+            const response = await axios.post('/save-feedback', {
                 text,
                 score: result.score,
                 isSpam: result.isSpam,
                 isCorrect,
+            });
+            setRetrainStatus({
+                inProgress: Boolean(response.data.retrain_in_progress),
+                startedAt: response.data.retrain_started_at || null,
+                lastFinishedAt: response.data.retrain_last_finished_at || null,
+                lastStatus: response.data.retrain_last_status || (response.data.retrain_scheduled ? 'scheduled' : null),
+                lastError: response.data.retrain_last_error || null,
             });
             setFeedbackGiven(true);
         } catch (error) {
@@ -127,6 +235,9 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
     const thresholdPercent = result ? (result.threshold * 100).toFixed(2) : '56.00';
     const isSpam = result?.isSpam;
     const progress = result ? result.score * 100 : 36;
+    const decisionBadge = decisionSourceBadges[result?.decisionSource || 'model'] || decisionSourceBadges.model;
+    const readableSummary = buildReadableSummary(result);
+    const retrainSummary = buildRetrainSummary(retrainStatus);
     const hamRatio = stats.total ? (stats.safe / stats.total) * 100 : 50;
     const spamRatio = stats.total ? (stats.spam / stats.total) * 100 : 18;
     const donutPercent = stats.total ? ((stats.safe / stats.total) * 100).toFixed(1) : '28.1';
@@ -411,6 +522,18 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                                 {result ? (isSpam ? '⚠️ Висока загроза (Спам)' : '✅ Повідомлення безпечне') : 'Очікуємо аналіз...'}
                                             </span>
                                         </div>
+                                        {result && (
+                                            <div className="mt-4 flex flex-wrap items-center gap-3">
+                                                <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] ${decisionBadge.className}`}>
+                                                    {decisionBadge.label}
+                                                </span>
+                                                {result.ruleLabel && (
+                                                    <span className="inline-flex rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100">
+                                                        {result.ruleLabel}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
                                         <div>
@@ -446,6 +569,147 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                                     <p className="mt-3 text-[11px] italic text-slate-500">
                                                         * Ці слова найбільше вплинули на рішення моделі.
                                                     </p>
+                                                </div>
+                                            )}
+
+                                            {result?.decisionSource === 'safe_business_rule' && (
+                                                <div className="mt-6 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 px-5 py-4 text-sm text-emerald-50/90">
+                                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200/80">
+                                                        Чому лист визнано безпечним
+                                                    </p>
+                                                    {result.reason && (
+                                                        <p className="mt-3 leading-6 text-emerald-100/85">{result.reason}</p>
+                                                    )}
+                                                    {result.matchedSignals?.length > 0 && (
+                                                        <div className="mt-4">
+                                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/75">
+                                                                Знайдені сигнали
+                                                            </p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {result.matchedSignals.map((signal, idx) => (
+                                                                    <span
+                                                                        key={`${signal}-${idx}`}
+                                                                        className="inline-flex rounded-full border border-emerald-300/20 bg-black/20 px-3 py-1 text-xs font-medium text-emerald-100"
+                                                                    >
+                                                                        {signal}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {readableSummary && (
+                                                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-sm leading-6 text-slate-100/90">
+                                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300/75">
+                                                        Короткий підсумок
+                                                    </p>
+                                                    <p className="mt-3">{readableSummary}</p>
+                                                </div>
+                                            )}
+
+                                            {result && (
+                                                result.subjectSignals?.length > 0 ||
+                                                result.bodySignals?.length > 0 ||
+                                                result.subjectSafeSignals?.length > 0 ||
+                                                result.bodySafeSignals?.length > 0 ||
+                                                result.metadataSignals?.length > 0
+                                            ) && (
+                                                <div className="mt-6 rounded-2xl border border-cyan-400/12 bg-cyan-400/[0.04] px-5 py-4 text-sm text-slate-100/90">
+                                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200/80">
+                                                        Explainability By Section
+                                                    </p>
+
+                                                    {result.metadataSignals?.length > 0 && (
+                                                        <div className="mt-4">
+                                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200/75">
+                                                                URL / Domain / Sender Signals
+                                                            </p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {result.metadataSignals.map((signal, idx) => (
+                                                                    <span
+                                                                        key={`meta-${signal}-${idx}`}
+                                                                        className="inline-flex rounded-full border border-amber-300/20 bg-black/20 px-3 py-1 text-xs font-medium text-amber-100"
+                                                                    >
+                                                                        {signal}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {result.subjectSignals?.length > 0 && (
+                                                        <div className="mt-4">
+                                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300/75">
+                                                                Subject Signals
+                                                            </p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {result.subjectSignals.map((signal, idx) => (
+                                                                    <span
+                                                                        key={`subject-${signal}-${idx}`}
+                                                                        className="inline-flex rounded-full border border-cyan-300/20 bg-black/20 px-3 py-1 text-xs font-medium text-cyan-100"
+                                                                    >
+                                                                        {signal}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {result.bodySignals?.length > 0 && (
+                                                        <div className="mt-4">
+                                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300/75">
+                                                                Body Signals
+                                                            </p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {result.bodySignals.map((signal, idx) => (
+                                                                    <span
+                                                                        key={`body-${signal}-${idx}`}
+                                                                        className="inline-flex rounded-full border border-sky-300/20 bg-black/20 px-3 py-1 text-xs font-medium text-sky-100"
+                                                                    >
+                                                                        {signal}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {result.subjectSafeSignals?.length > 0 && (
+                                                        <div className="mt-4">
+                                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/75">
+                                                                Safe Subject Signals
+                                                            </p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {result.subjectSafeSignals.map((signal, idx) => (
+                                                                    <span
+                                                                        key={`subject-safe-${signal}-${idx}`}
+                                                                        className="inline-flex rounded-full border border-emerald-300/20 bg-black/20 px-3 py-1 text-xs font-medium text-emerald-100"
+                                                                    >
+                                                                        {signal}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {result.bodySafeSignals?.length > 0 && (
+                                                        <div className="mt-4">
+                                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/75">
+                                                                Safe Body Signals
+                                                            </p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {result.bodySafeSignals.map((signal, idx) => (
+                                                                    <span
+                                                                        key={`body-safe-${signal}-${idx}`}
+                                                                        className="inline-flex rounded-full border border-emerald-300/20 bg-black/20 px-3 py-1 text-xs font-medium text-emerald-100"
+                                                                    >
+                                                                        {signal}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -503,6 +767,15 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                     {feedbackGiven && (
                                         <p className="mt-4 text-center text-sm text-cyan-300 animate-pulse">Дякуємо! Відгук успішно записано в базу.</p>
                                     )}
+
+                                    {retrainSummary && (
+                                        <div className={`mt-4 rounded-2xl border px-4 py-4 text-sm leading-6 ${retrainSummary.className}`}>
+                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
+                                                {retrainSummary.title}
+                                            </p>
+                                            <p className="mt-2">{retrainSummary.body}</p>
+                                        </div>
+                                    )}
                                 </section>
 
                                 <section className="dashboard-card rounded-[1.45rem] px-6 py-6 sm:px-8">
@@ -517,6 +790,12 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                             <span className="text-sm font-medium text-cyan-200">LinearSVM Calibrated</span>
                                         </div>
                                         <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Джерело рішення</span>
+                                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${decisionBadge.className}`}>
+                                                {result ? decisionBadge.label : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
                                             <span className="text-sm text-slate-400">Spam Score</span>
                                             <span className="text-sm font-medium text-white">{result ? result.score.toFixed(6) : '—'}</span>
                                         </div>
@@ -527,6 +806,70 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                         <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
                                             <span className="text-sm text-slate-400">Враховано слів</span>
                                             <span className="text-sm font-medium text-white">{text.trim() ? text.trim().split(/\s+/).length : 0}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Cache</span>
+                                            <span className={`text-sm font-medium ${result?.cacheHit ? 'text-emerald-200' : 'text-slate-300'}`}>
+                                                {result ? (result.cacheHit ? 'HIT' : 'MISS') : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Total Latency</span>
+                                            <span className="text-sm font-medium text-white">
+                                                {result?.timings?.total_ms != null ? `${result.timings.total_ms.toFixed(2)} ms` : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Model Inference</span>
+                                            <span className="text-sm font-medium text-white">
+                                                {result?.timings?.model_inference_ms != null ? `${result.timings.model_inference_ms.toFixed(2)} ms` : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Explainability</span>
+                                            <span className="text-sm font-medium text-white">
+                                                {result?.timings?.explainability_ms != null ? `${result.timings.explainability_ms.toFixed(2)} ms` : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Hot Memory Lookup</span>
+                                            <span className="text-sm font-medium text-white">
+                                                {result?.timings?.hot_memory_lookup_ms != null ? `${result.timings.hot_memory_lookup_ms.toFixed(2)} ms` : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Rule Check</span>
+                                            <span className="text-sm font-medium text-white">
+                                                {result?.timings?.rule_check_ms != null ? `${result.timings.rule_check_ms.toFixed(2)} ms` : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Cache Lookup</span>
+                                            <span className="text-sm font-medium text-white">
+                                                {result?.timings?.cache_lookup_ms != null ? `${result.timings.cache_lookup_ms.toFixed(2)} ms` : '—'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <span className="text-sm text-slate-400">Статус retrain</span>
+                                            <span className={`text-sm font-medium ${
+                                                retrainStatus?.inProgress
+                                                    ? 'text-sky-200'
+                                                    : retrainStatus?.lastStatus === 'error'
+                                                      ? 'text-rose-200'
+                                                      : retrainStatus?.lastStatus === 'success'
+                                                        ? 'text-emerald-200'
+                                                        : 'text-slate-300'
+                                            }`}>
+                                                {retrainStatus?.inProgress
+                                                    ? 'У процесі'
+                                                    : retrainStatus?.lastStatus === 'error'
+                                                      ? 'Помилка'
+                                                      : retrainStatus?.lastStatus === 'success'
+                                                        ? 'Завершено'
+                                                        : retrainStatus?.lastStatus === 'scheduled'
+                                                          ? 'Заплановано'
+                                                          : 'Немає'}
+                                            </span>
                                         </div>
                                     </div>
                                 </section>

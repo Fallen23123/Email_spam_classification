@@ -42,6 +42,9 @@ SUBJECT_COLUMN_CANDIDATES = (
     "header",
 )
 
+SUBJECT_MARKER = "subjecttoken"
+BODY_MARKER = "bodytoken"
+
 
 def normalize_label(value):
     if pd.isna(value):
@@ -126,6 +129,20 @@ def normalize_text_series(series):
     )
 
 
+def build_subject_body_text(subject_series, body_series):
+    subject_series = normalize_text_series(subject_series)
+    body_series = normalize_text_series(body_series)
+    return (
+        SUBJECT_MARKER
+        + " "
+        + subject_series
+        + " "
+        + BODY_MARKER
+        + " "
+        + body_series
+    ).str.strip()
+
+
 def standardize_dataset_frame(df, source_name):
     label_column = find_matching_column(df.columns, LABEL_COLUMN_CANDIDATES)
     text_column = find_matching_column(df.columns, TEXT_COLUMN_CANDIDATES)
@@ -144,16 +161,21 @@ def standardize_dataset_frame(df, source_name):
     if text_column and subject_column and text_column != subject_column:
         subject_text = normalize_text_series(df[subject_column])
         body_text = normalize_text_series(df[text_column])
-        text = (
-            "subject " + subject_text + " body " + body_text
-        ).str.strip()
+    elif subject_column is not None and text_column is None:
+        subject_text = normalize_text_series(df[subject_column])
+        body_text = pd.Series([""] * len(df), index=df.index, dtype="object")
     else:
         active_text_column = text_column or subject_column
-        text = normalize_text_series(df[active_text_column])
+        subject_text = pd.Series([""] * len(df), index=df.index, dtype="object")
+        body_text = normalize_text_series(df[active_text_column])
+
+    text = build_subject_body_text(subject_text, body_text)
 
     prepared = pd.DataFrame(
         {
             "label": df[label_column].map(normalize_label),
+            "subject": subject_text,
+            "body": body_text,
             "text": text,
             "source": source_name,
         }

@@ -13,6 +13,7 @@ import sqlite3
 
 from config import DEFAULT_EVALUATION_SCOPE, DEFAULT_THRESHOLD, RETRAIN_THRESHOLD
 from retrain_utils import run_holdout_retrain
+from safe_mail_rules import detect_safe_business_rule
 
 # --- КОНФІГУРАЦІЯ НАВЧАННЯ ---
 DATA_FILE = "data/feedback_log.csv" 
@@ -123,6 +124,50 @@ def render_retrain_status(meta):
     col1.metric("Threshold", f"{threshold:.4f}")
     col2.metric("Test F1", f"{test_f1:.4f}")
     st.caption(f"Останнє оновлення: {last_retrain}")
+
+
+def render_prediction_source_badge(prediction_source):
+    badges = {
+        "model": {
+            "label": "Model",
+            "background": "#3f3f46",
+            "border": "#a1a1aa",
+            "text": "#fafafa",
+        },
+        "hot_memory": {
+            "label": "Hot Memory",
+            "background": "#78350f",
+            "border": "#f59e0b",
+            "text": "#fef3c7",
+        },
+        "safe_business_rule": {
+            "label": "Safe Business Rule",
+            "background": "#14532d",
+            "border": "#22c55e",
+            "text": "#dcfce7",
+        },
+    }
+    badge = badges.get(prediction_source, badges["model"])
+    st.markdown(
+        f"""
+        <div style="margin: 8px 0 12px 0;">
+            <span style="
+                display: inline-block;
+                padding: 6px 10px;
+                border-radius: 999px;
+                border: 1px solid {badge['border']};
+                background: {badge['background']};
+                color: {badge['text']};
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+            ">
+                {badge['label']}
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def save_feedback(text: str, is_spam_predicted: bool, is_correct: bool):
     actual_is_spam = is_spam_predicted if is_correct else not is_spam_predicted
@@ -304,10 +349,30 @@ if st.button("🔍 Перевірити"):
             if row:
                 forced_label = row[0]
                 prob = 0.99 if forced_label == 'spam' else 0.01
+                prediction_source = "hot_memory"
+                rule_label = None
+                rule_reason = None
+                matched_signals = []
                 st.toast("⚡ Знайдено у ваших відгуках! Застосовано виправлення.", icon="🧠")
             else:
-                features = preprocessor.transform([user_input])
-                prob = classifier.predict_proba(features)[0][1]
+                safe_rule_result = detect_safe_business_rule(user_input)
+                if safe_rule_result:
+                    prob = float(safe_rule_result["score"])
+                    prediction_source = safe_rule_result["decision_source"]
+                    rule_label = safe_rule_result["rule_label"]
+                    rule_reason = safe_rule_result.get("reason")
+                    matched_signals = safe_rule_result.get("matched_signals", [])
+                    st.toast(
+                        f"🧾 Safe-business rule: {rule_label}",
+                        icon="🛡️",
+                    )
+                else:
+                    features = preprocessor.transform([user_input])
+                    prob = classifier.predict_proba(features)[0][1]
+                    prediction_source = "model"
+                    rule_label = None
+                    rule_reason = None
+                    matched_signals = []
 
             predicted_is_spam = prob >= current_threshold
             
@@ -316,6 +381,10 @@ if st.button("🔍 Перевірити"):
             st.session_state.current_text = user_input
             st.session_state.prediction_threshold = current_threshold
             st.session_state.predicted_is_spam = predicted_is_spam
+            st.session_state.prediction_source = prediction_source
+            st.session_state.rule_label = rule_label
+            st.session_state.rule_reason = rule_reason
+            st.session_state.matched_signals = matched_signals
             st.session_state.feedback_given = False 
             
             st.session_state.total_checked += 1
@@ -329,6 +398,22 @@ if st.button("🔍 Перевірити"):
 if st.session_state.analyzed:
     score = st.session_state.spam_score
     st.metric("Ймовірність спаму", f"{score:.1%}")
+    prediction_source = st.session_state.get("prediction_source", "model")
+    rule_label = st.session_state.get("rule_label")
+    rule_reason = st.session_state.get("rule_reason")
+    matched_signals = st.session_state.get("matched_signals", [])
+    render_prediction_source_badge(prediction_source)
+    if prediction_source == "safe_business_rule" and rule_label:
+        st.info(f"Результат зафіксовано safe-business rule: {rule_label}")
+        with st.expander("Чому лист визнано безпечним", expanded=True):
+            if rule_reason:
+                st.caption(rule_reason)
+            if matched_signals:
+                st.write("Знайдені сигнали:")
+                for signal in matched_signals:
+                    st.code(signal)
+    elif prediction_source == "hot_memory":
+        st.info("Результат узято з ваших раніше підтверджених виправлень.")
     
     hue = max(0, min(120, int(120 - (score * 120))))
     st.markdown(f"""
