@@ -800,47 +800,53 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                             </section>
 
                             {/* Блок навчання та діагностики */}
-                            <div className="grid gap-4 lg:grid-cols-2">
-                                <section className="dashboard-card rounded-[1.45rem] px-6 py-6 sm:px-8 flex flex-col justify-between">
+                            <div className="grid items-start gap-4 lg:grid-cols-2">
+                                <section className="dashboard-card rounded-[1.45rem] px-6 py-6 sm:px-8">
                                     <div>
                                         <div className="flex items-center gap-3">
                                             <span className="rounded-lg bg-white/6 px-2 py-1 text-sm text-slate-200">🧠</span>
                                             <h2 className="text-2xl font-semibold text-white">Навчання моделі</h2>
                                         </div>
-                                        <p className="mt-4 text-slate-300">Чи правильно система класифікувала цей лист?</p>
+                                        <p className="mt-3 max-w-md text-sm leading-6 text-slate-300">
+                                            Допоможи моделі стати точнішою: підтвердь, чи правильно система класифікувала цей лист.
+                                        </p>
                                     </div>
 
-                                    <div className="mt-6 flex gap-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleFeedback(true)}
-                                            disabled={!result || feedbackGiven}
-                                            className="flex-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-3 text-sm font-semibold text-emerald-300 transition-all hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            ✅ Так, правильно
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleFeedback(false)}
-                                            disabled={!result || feedbackGiven}
-                                            className="flex-1 rounded-xl border border-amber-500/30 bg-amber-500/10 py-3 text-sm font-semibold text-amber-300 transition-all hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            ❌ Ні, помилка
-                                        </button>
-                                    </div>
-
-                                    {feedbackGiven && (
-                                        <p className="mt-4 text-center text-sm text-cyan-300 animate-pulse">Дякуємо! Відгук успішно записано в базу.</p>
-                                    )}
-
-                                    {retrainSummary && (
-                                        <div className={`mt-4 rounded-2xl border px-4 py-4 text-sm leading-6 ${retrainSummary.className}`}>
-                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
-                                                {retrainSummary.title}
-                                            </p>
-                                            <p className="mt-2">{retrainSummary.body}</p>
+                                    <div className="mt-6 rounded-[1.35rem] border border-white/8 bg-black/20 p-4 sm:p-5">
+                                        <div className="flex flex-col gap-3 sm:flex-row">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleFeedback(true)}
+                                                disabled={!result || feedbackGiven}
+                                                className="flex-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-300 transition-all hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                ✅ Так, правильно
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleFeedback(false)}
+                                                disabled={!result || feedbackGiven}
+                                                className="flex-1 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-300 transition-all hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                ❌ Ні, помилка
+                                            </button>
                                         </div>
-                                    )}
+
+                                        {feedbackGiven && (
+                                            <p className="mt-4 text-sm text-cyan-300 animate-pulse">
+                                                Дякуємо! Відгук успішно записано в базу.
+                                            </p>
+                                        )}
+
+                                        {retrainSummary && (
+                                            <div className={`mt-4 rounded-2xl border px-4 py-4 text-sm leading-6 ${retrainSummary.className}`}>
+                                                <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
+                                                    {retrainSummary.title}
+                                                </p>
+                                                <p className="mt-2">{retrainSummary.body}</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </section>
 
                                 <section className="dashboard-card rounded-[1.45rem] px-6 py-6 sm:px-8">
