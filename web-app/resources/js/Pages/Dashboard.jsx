@@ -102,6 +102,39 @@ const buildRetrainSummary = (retrainStatus) => {
     return null;
 };
 
+const technicalMetricDescriptions = {
+    model: 'Назва моделі, яка зараз виконує класифікацію листа.',
+    decisionSource: 'Звідки взялося рішення: модель, гаряча пам’ять, safe rule або anti-phishing rule.',
+    spamScore: 'Ймовірність спаму від 0 до 1. Чим вище значення, тим підозрілішим виглядає лист.',
+    threshold: 'Поріг, вище якого лист вважається спамом. Якщо score нижчий за поріг, лист іде в не спам.',
+    wordCount: 'Скільки слів система врахувала в поточному тексті листа.',
+    cache: 'Чи був результат взятий з оперативного кешу. HIT швидше, MISS означає повний новий аналіз.',
+    totalLatency: 'Загальний час відповіді бекенда для цього аналізу.',
+    modelInference: 'Час, витрачений саме на прогноз моделі.',
+    explainability: 'Час на побудову пояснень: keywords, section signals та metadata signals.',
+    hotMemory: 'Час перевірки, чи є цей лист у ваших уже підтверджених feedback-виправленнях.',
+    ruleCheck: 'Час перевірки safe-business і anti-phishing правил перед запуском моделі.',
+    cacheLookup: 'Час перевірки оперативного кешу до всіх інших етапів.',
+    retrainStatus: 'Поточний стан автоперенавчання моделі у фоні.',
+};
+
+const renderTechnicalMetricRow = (label, value, description, valueClassName = 'text-white') => (
+    <div className="group relative flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+        <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-400">{label}</span>
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-400 transition-colors group-hover:border-cyan-300/40 group-hover:text-cyan-200">
+                i
+            </span>
+        </div>
+        <span className={`text-sm font-medium ${valueClassName}`}>{value}</span>
+        <div className="pointer-events-none absolute left-3 right-3 top-full z-20 mt-2 opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0">
+            <div className="rounded-xl border border-cyan-300/20 bg-[#0b1422] px-3 py-2 text-xs leading-5 text-slate-200 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
+                {description}
+            </div>
+        </div>
+    </div>
+);
+
 // ОНОВЛЕНО: приймаємо initialHistory та initialStats з бекенду (з бази даних)
 export default function Dashboard({ auth, initialHistory = [], initialStats = { total: 0, spam: 0, safe: 0 } }) {
     const [text, setText] = useState('');
@@ -817,92 +850,99 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                     </div>
                                     
                                     <div className="mt-6 space-y-4">
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Модель</span>
-                                            <span className="text-sm font-medium text-cyan-200">LinearSVM Calibrated</span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Джерело рішення</span>
+                                        {renderTechnicalMetricRow(
+                                            'Модель',
+                                            'LinearSVM Calibrated',
+                                            technicalMetricDescriptions.model,
+                                            'text-cyan-200',
+                                        )}
+                                        <div className="group relative flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm text-slate-400">Джерело рішення</span>
+                                                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/10 text-[10px] font-semibold text-slate-400 transition-colors group-hover:border-cyan-300/40 group-hover:text-cyan-200">
+                                                    i
+                                                </span>
+                                            </div>
                                             <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${decisionBadge.className}`}>
                                                 {result ? decisionBadge.label : '—'}
                                             </span>
+                                            <div className="pointer-events-none absolute left-3 right-3 top-full z-20 mt-2 opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0">
+                                                <div className="rounded-xl border border-cyan-300/20 bg-[#0b1422] px-3 py-2 text-xs leading-5 text-slate-200 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
+                                                    {technicalMetricDescriptions.decisionSource}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Spam Score</span>
-                                            <span className="text-sm font-medium text-white">{result ? result.score.toFixed(6) : '—'}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Поріг (Threshold)</span>
-                                            <span className="text-sm font-medium text-white">{result ? result.threshold.toFixed(2) : '0.55'}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Враховано слів</span>
-                                            <span className="text-sm font-medium text-white">{text.trim() ? text.trim().split(/\s+/).length : 0}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Cache</span>
-                                            <span className={`text-sm font-medium ${result?.cacheHit ? 'text-emerald-200' : 'text-slate-300'}`}>
-                                                {result ? (result.cacheHit ? 'HIT' : 'MISS') : '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Total Latency</span>
-                                            <span className="text-sm font-medium text-white">
-                                                {result?.timings?.total_ms != null ? `${result.timings.total_ms.toFixed(2)} ms` : '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Model Inference</span>
-                                            <span className="text-sm font-medium text-white">
-                                                {result?.timings?.model_inference_ms != null ? `${result.timings.model_inference_ms.toFixed(2)} ms` : '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Explainability</span>
-                                            <span className="text-sm font-medium text-white">
-                                                {result?.timings?.explainability_ms != null ? `${result.timings.explainability_ms.toFixed(2)} ms` : '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Hot Memory Lookup</span>
-                                            <span className="text-sm font-medium text-white">
-                                                {result?.timings?.hot_memory_lookup_ms != null ? `${result.timings.hot_memory_lookup_ms.toFixed(2)} ms` : '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Rule Check</span>
-                                            <span className="text-sm font-medium text-white">
-                                                {result?.timings?.rule_check_ms != null ? `${result.timings.rule_check_ms.toFixed(2)} ms` : '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Cache Lookup</span>
-                                            <span className="text-sm font-medium text-white">
-                                                {result?.timings?.cache_lookup_ms != null ? `${result.timings.cache_lookup_ms.toFixed(2)} ms` : '—'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
-                                            <span className="text-sm text-slate-400">Статус retrain</span>
-                                            <span className={`text-sm font-medium ${
-                                                retrainStatus?.inProgress
-                                                    ? 'text-sky-200'
-                                                    : retrainStatus?.lastStatus === 'error'
-                                                      ? 'text-rose-200'
-                                                      : retrainStatus?.lastStatus === 'success'
-                                                        ? 'text-emerald-200'
-                                                        : 'text-slate-300'
-                                            }`}>
-                                                {retrainStatus?.inProgress
-                                                    ? 'У процесі'
-                                                    : retrainStatus?.lastStatus === 'error'
-                                                      ? 'Помилка'
-                                                      : retrainStatus?.lastStatus === 'success'
-                                                        ? 'Завершено'
-                                                        : retrainStatus?.lastStatus === 'scheduled'
-                                                          ? 'Заплановано'
-                                                          : 'Немає'}
-                                            </span>
-                                        </div>
+                                        {renderTechnicalMetricRow(
+                                            'Spam Score',
+                                            result ? result.score.toFixed(6) : '—',
+                                            technicalMetricDescriptions.spamScore,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Поріг (Threshold)',
+                                            result ? result.threshold.toFixed(2) : '0.55',
+                                            technicalMetricDescriptions.threshold,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Враховано слів',
+                                            text.trim() ? text.trim().split(/\s+/).length : 0,
+                                            technicalMetricDescriptions.wordCount,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Cache',
+                                            result ? (result.cacheHit ? 'HIT' : 'MISS') : '—',
+                                            technicalMetricDescriptions.cache,
+                                            result?.cacheHit ? 'text-emerald-200' : 'text-slate-300',
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Total Latency',
+                                            result?.timings?.total_ms != null ? `${result.timings.total_ms.toFixed(2)} ms` : '—',
+                                            technicalMetricDescriptions.totalLatency,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Model Inference',
+                                            result?.timings?.model_inference_ms != null ? `${result.timings.model_inference_ms.toFixed(2)} ms` : '—',
+                                            technicalMetricDescriptions.modelInference,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Explainability',
+                                            result?.timings?.explainability_ms != null ? `${result.timings.explainability_ms.toFixed(2)} ms` : '—',
+                                            technicalMetricDescriptions.explainability,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Hot Memory Lookup',
+                                            result?.timings?.hot_memory_lookup_ms != null ? `${result.timings.hot_memory_lookup_ms.toFixed(2)} ms` : '—',
+                                            technicalMetricDescriptions.hotMemory,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Rule Check',
+                                            result?.timings?.rule_check_ms != null ? `${result.timings.rule_check_ms.toFixed(2)} ms` : '—',
+                                            technicalMetricDescriptions.ruleCheck,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Cache Lookup',
+                                            result?.timings?.cache_lookup_ms != null ? `${result.timings.cache_lookup_ms.toFixed(2)} ms` : '—',
+                                            technicalMetricDescriptions.cacheLookup,
+                                        )}
+                                        {renderTechnicalMetricRow(
+                                            'Статус retrain',
+                                            retrainStatus?.inProgress
+                                                ? 'У процесі'
+                                                : retrainStatus?.lastStatus === 'error'
+                                                  ? 'Помилка'
+                                                  : retrainStatus?.lastStatus === 'success'
+                                                    ? 'Завершено'
+                                                    : retrainStatus?.lastStatus === 'scheduled'
+                                                      ? 'Заплановано'
+                                                      : 'Немає',
+                                            technicalMetricDescriptions.retrainStatus,
+                                            retrainStatus?.inProgress
+                                                ? 'text-sky-200'
+                                                : retrainStatus?.lastStatus === 'error'
+                                                  ? 'text-rose-200'
+                                                  : retrainStatus?.lastStatus === 'success'
+                                                    ? 'text-emerald-200'
+                                                    : 'text-slate-300',
+                                        )}
                                     </div>
                                 </section>
                             </div>
