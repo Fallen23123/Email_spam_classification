@@ -1,0 +1,37 @@
+label,subject,body,sender,sender_domain
+ham,Verify your sign-in code,"Use code 184233 to finish signing in to your Google Account. If this was you, enter the code on accounts.google.com.",no-reply@accounts.google.com,accounts.google.com
+ham,Security alert for your account,"We noticed a new sign-in to your Microsoft account from Chrome on Windows. Review this activity at https://account.microsoft.com/security.",account-security-noreply@microsoft.com,microsoft.com
+ham,Password reset requested,"A password reset was requested for your Apple ID. If this was you, continue at https://iforgot.apple.com/ to create a new password.",appleid@id.apple.com,apple.com
+ham,Confirm your new device,"We detected a new device used to sign in to your Facebook account. Review this device in your account settings at https://www.facebook.com/security.",security@facebookmail.com,facebook.com
+ham,Important billing document ready,"Your invoice INV-2048 is ready for download in the billing portal. Review the invoice and receipt at https://www.paypal.com/myaccount/activity.",billing@paypal.com,paypal.com
+ham,Receipt for your recent payment,"Thank you for your payment. Your receipt is attached and is also available in your order history on https://www.amazon.com/your-orders.",auto-confirm@amazon.com,amazon.com
+ham,Delivery update for order 84219,"Your order has been shipped and is on the way. Track the package in your account dashboard at https://www.amazon.com/your-orders.",shipment-tracking@amazon.com,amazon.com
+ham,Action required to finish setup,"Complete the final step for your Zoom workspace by confirming your business email on https://zoom.us/signin.",no-reply@zoom.us,zoom.us
+ham,Two-factor authentication code,"Your bank sign-in code is 552201. Enter it in the secure login form to continue. Do not share this code with anyone.",security@monobank.ua,monobank.ua
+ham,Review your account activity,"A new device signed in to your Google Workspace account. Check activity details at https://myaccount.google.com/notifications.",workspace-noreply@google.com,google.com
+ham,Invoice due tomorrow,"This is a reminder that invoice 5831 is due tomorrow. View billing details in the Stripe dashboard at https://dashboard.stripe.com/.",billing@stripe.com,stripe.com
+ham,Payment failed for subscription,"We could not process your monthly payment for your Adobe subscription. Update the card securely at https://account.adobe.com/.",account-noreply@adobe.com,adobe.com
+ham,Booking confirmation and check-in details,"Your reservation has been confirmed. Review your itinerary and check-in instructions at https://www.booking.com/confirmation.",confirmation@booking.com,booking.com
+ham,Verification code for secure change,"Use code 906521 to confirm the change to your profile settings. The code expires in 10 minutes.",security@ukr.net,ukr.net
+ham,Order ready for pickup,"Your order is ready for pickup at the selected location. Bring the QR code from your account page at https://rozetka.com.ua/.",no-reply@rozetka.com.ua,rozetka.com.ua
+ham,Important payroll update,"Your payroll statement for this month is available in the HR portal. Sign in with your company account to review it.",hr@company-payroll.com,company-payroll.com
+ham,Meeting invite updated,"The schedule for tomorrow's project review has changed. Open the calendar invitation and confirm attendance in Outlook.",calendar-notify@microsoft.com,microsoft.com
+ham,Review unusual activity,"We blocked a sign-in attempt and need you to confirm recent activity. Review the attempt on https://account.microsoft.com/security.",msonlineservicesteam@microsoft.com,microsoft.com
+ham,Tax document available,"Your annual tax statement is ready in the employee portal. Download the document after you sign in.",payroll@company-finance.com,company-finance.com
+ham,Code to finish card setup,"Use confirmation code 431998 to finish linking your card in the app. The code expires in five minutes.",security@privatbank.ua,privatbank.ua
+ham,Please review your recent login,"A new browser signed in to your LinkedIn account. Review this login and confirm it was you.",security-noreply@linkedin.com,linkedin.com
+ham,Receipt for cloud payment,"Your receipt for the recent AWS payment is available in the billing console. Sign in to review usage details.",aws-receipts@amazon.com,amazon.com
+ham,Update your company profile,"Your admin asked you to review and confirm the legal company address in the business portal this week.",admin@company-portal.com,company-portal.com
+ham,Delivery issue resolved,"The delivery exception for your package has been resolved. New tracking details are available in your order page.",tracking@novaposhta.ua,novaposhta.ua
+ham,Verify corporate email ownership,"Use the secure code 200114 to verify your corporate email before enabling SSO for the team.",identity@okta.com,okta.com
+ham,Subscription renewal notice,"Your annual renewal is scheduled for next week. Review the invoice and payment method in your customer account.",billing@notion.so,notion.so
+ham,Medical appointment confirmation,"Your appointment is confirmed for Tuesday at 10:30. Review details and complete pre-check-in in the patient portal.",appointments@clinic-portal.com,clinic-portal.com
+ham,Action needed to release reimbursement,"Your travel reimbursement requires one final approval. Sign in to the employee expenses portal to confirm bank details.",expenses@company-finance.com,company-finance.com
+ham,Secure message from support,"A support agent replied to your ticket. Sign in to the official support center to view the secure message thread.",support@dropbox.com,dropbox.com
+ham,Package customs update,"Your international shipment needs a customs confirmation. Review the shipment notice in your DHL account.",notification@dhl.com,dhl.com
+ham,Identity verification result,"Your identity verification was completed successfully. You can now continue onboarding in the official company portal.",verification@wise.com,wise.com
+ham,Review account notice,"We made a change to your security settings and want you to review it. Open the account center to confirm the change was expected.",security@meta.com,meta.com
+ham,Project budget and payment options,"I reviewed your test assignment and the code looks clean. We can start the project sprint on Monday. Payment can be sent in USDT or through Payoneer. The total budget is 1200 USD.",founder@product-studio.com,product-studio.com
+ham,Client offer after technical test,"Thanks for completing the test task. I am ready to offer you this project. The budget is fixed and we can pay via Payoneer after the first sprint review.",hiring@design-dev.co,design-dev.co
+ham,Freelance collaboration details,"Your test project review went well. If you are available, we can begin next week. Payment is available in crypto or bank transfer, whichever is more convenient for you.",operations@remote-team.io,remote-team.io
+ham,Contractor onboarding payment setup,"Before we start the sprint, please confirm whether you prefer Payoneer or USDT for the first milestone payment. The client already approved the budget.",finance@contractor-portal.com,contractor-portal.com

@@ -1,6 +1,6 @@
 import unittest
 
-from safe_mail_rules import detect_safe_business_rule
+from safe_mail_rules import detect_lookalike_domain_rule, detect_safe_business_rule
 
 
 class SafeMailRulesRegressionTests(unittest.TestCase):
@@ -48,6 +48,44 @@ class SafeMailRulesRegressionTests(unittest.TestCase):
         )
 
         result = detect_safe_business_rule(text)
+
+        self.assertIsNone(result)
+
+    def test_freelance_project_message_is_whitelisted_as_ham(self):
+        text = (
+            "Привіт! Я передивляв твоє тестове завдання, все супер, код чистий. "
+            "Готовий запропонувати тобі цей проект. Оплата буде в USDT або на Payoneer. "
+            "Загальний бюджет $1200. Починаємо спринт у понеділок."
+        )
+
+        result = detect_safe_business_rule(text)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["predicted_label"], "ham")
+        self.assertEqual(result["rule_name"], "freelance_project_negotiation")
+
+    def test_lookalike_sender_domain_is_detected_as_phishing(self):
+        text = (
+            "X-Sender: Security Team <alerts@paypa1.com>\n"
+            "Subject: Important account notice\n"
+            "Open https://paypa1.com/security-check to restore access."
+        )
+
+        result = detect_lookalike_domain_rule(text)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["decision_source"], "phishing_domain_rule")
+        self.assertEqual(result["predicted_label"], "spam")
+        self.assertEqual(result["rule_name"], "lookalike_domain")
+        self.assertIn("PayPal", result["rule_matches"])
+
+    def test_official_brand_domain_is_not_flagged_as_lookalike(self):
+        text = (
+            "From: PayPal <service@paypal.com>\n"
+            "Please review your activity at https://www.paypal.com/activity."
+        )
+
+        result = detect_lookalike_domain_rule(text)
 
         self.assertIsNone(result)
 

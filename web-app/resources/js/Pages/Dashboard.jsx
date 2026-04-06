@@ -25,6 +25,10 @@ const decisionSourceBadges = {
         label: 'Safe Business Rule',
         className: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
     },
+    phishing_domain_rule: {
+        label: 'Phishing Domain Rule',
+        className: 'border-rose-400/30 bg-rose-400/10 text-rose-100',
+    },
 };
 
 const buildReadableSummary = (result) => {
@@ -32,6 +36,12 @@ const buildReadableSummary = (result) => {
 
     const riskySignals = [...(result.subjectSignals || []), ...(result.bodySignals || [])].slice(0, 4);
     const safeSignals = [...(result.subjectSafeSignals || []), ...(result.bodySafeSignals || [])].slice(0, 4);
+    const metadataSignals = [...(result.metadataSignals || [])].slice(0, 4);
+
+    if (result.decisionSource === 'phishing_domain_rule' && result.ruleLabel) {
+        const details = metadataSignals.length > 0 ? ` Сигнали: ${metadataSignals.join(', ')}.` : '';
+        return `Лист виглядає як фішинг, оскільки правило "${result.ruleLabel}" знайшло ознаки імперсонації бренду.${details}`;
+    }
 
     if (result.decisionSource === 'safe_business_rule' && result.ruleLabel) {
         const details = safeSignals.length > 0 ? ` Безпечні сигнали: ${safeSignals.join(', ')}.` : '';
@@ -572,24 +582,46 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                                 </div>
                                             )}
 
-                                            {result?.decisionSource === 'safe_business_rule' && (
-                                                <div className="mt-6 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 px-5 py-4 text-sm text-emerald-50/90">
-                                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200/80">
-                                                        Чому лист визнано безпечним
+                                            {(result?.decisionSource === 'safe_business_rule' || result?.decisionSource === 'phishing_domain_rule') && (
+                                                <div className={`mt-6 rounded-2xl border px-5 py-4 text-sm ${
+                                                    result?.decisionSource === 'phishing_domain_rule'
+                                                        ? 'border-rose-400/15 bg-rose-400/5 text-rose-50/90'
+                                                        : 'border-emerald-400/15 bg-emerald-400/5 text-emerald-50/90'
+                                                }`}>
+                                                    <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${
+                                                        result?.decisionSource === 'phishing_domain_rule'
+                                                            ? 'text-rose-200/80'
+                                                            : 'text-emerald-200/80'
+                                                    }`}>
+                                                        {result?.decisionSource === 'phishing_domain_rule'
+                                                            ? 'Чому лист визнано фішинговим'
+                                                            : 'Чому лист визнано безпечним'}
                                                     </p>
                                                     {result.reason && (
-                                                        <p className="mt-3 leading-6 text-emerald-100/85">{result.reason}</p>
+                                                        <p className={`mt-3 leading-6 ${
+                                                            result?.decisionSource === 'phishing_domain_rule'
+                                                                ? 'text-rose-100/85'
+                                                                : 'text-emerald-100/85'
+                                                        }`}>{result.reason}</p>
                                                     )}
                                                     {result.matchedSignals?.length > 0 && (
                                                         <div className="mt-4">
-                                                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/75">
+                                                            <p className={`text-xs font-semibold uppercase tracking-[0.16em] ${
+                                                                result?.decisionSource === 'phishing_domain_rule'
+                                                                    ? 'text-rose-200/75'
+                                                                    : 'text-emerald-200/75'
+                                                            }`}>
                                                                 Знайдені сигнали
                                                             </p>
                                                             <div className="mt-3 flex flex-wrap gap-2">
                                                                 {result.matchedSignals.map((signal, idx) => (
                                                                     <span
                                                                         key={`${signal}-${idx}`}
-                                                                        className="inline-flex rounded-full border border-emerald-300/20 bg-black/20 px-3 py-1 text-xs font-medium text-emerald-100"
+                                                                        className={`inline-flex rounded-full border bg-black/20 px-3 py-1 text-xs font-medium ${
+                                                                            result?.decisionSource === 'phishing_domain_rule'
+                                                                                ? 'border-rose-300/20 text-rose-100'
+                                                                                : 'border-emerald-300/20 text-emerald-100'
+                                                                        }`}
                                                                     >
                                                                         {signal}
                                                                     </span>

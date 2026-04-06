@@ -11,9 +11,9 @@ import plotly.express as px
 import pandas as pd
 import sqlite3
 
-from config import DEFAULT_EVALUATION_SCOPE, DEFAULT_THRESHOLD, RETRAIN_THRESHOLD
+from config import DEFAULT_EVALUATION_SCOPE, DEFAULT_THRESHOLD, MIN_DECISION_THRESHOLD, RETRAIN_THRESHOLD
 from retrain_utils import run_holdout_retrain
-from safe_mail_rules import detect_safe_business_rule
+from safe_mail_rules import detect_lookalike_domain_rule, detect_safe_business_rule
 
 # --- КОНФІГУРАЦІЯ НАВЧАННЯ ---
 DATA_FILE = "data/feedback_log.csv" 
@@ -116,7 +116,10 @@ def render_feedback_stats(meta):
 
 def render_retrain_status(meta):
     last_retrain = meta.get("last_retrain", "Немає")
-    threshold = float(meta.get("threshold", DEFAULT_THRESHOLD))
+    threshold = max(
+        float(meta.get("threshold", DEFAULT_THRESHOLD)),
+        float(MIN_DECISION_THRESHOLD),
+    )
     test_f1 = float(meta.get("test_metrics", {}).get("f1", 0.0) or 0.0)
 
     st.markdown("#### 🔎 Retrain Status")
@@ -145,6 +148,12 @@ def render_prediction_source_badge(prediction_source):
             "background": "#14532d",
             "border": "#22c55e",
             "text": "#dcfce7",
+        },
+        "phishing_domain_rule": {
+            "label": "Phishing Domain Rule",
+            "background": "#7f1d1d",
+            "border": "#fb7185",
+            "text": "#ffe4e6",
         },
     }
     badge = badges.get(prediction_source, badges["model"])
@@ -203,7 +212,10 @@ def export_sqlite_to_csv():
 pipeline, meta = load_artifacts()
 preprocessor = pipeline.named_steps["prep"]
 classifier = pipeline.named_steps["clf"]
-current_threshold = float(meta.get("threshold", DEFAULT_THRESHOLD))
+current_threshold = max(
+    float(meta.get("threshold", DEFAULT_THRESHOLD)),
+    float(MIN_DECISION_THRESHOLD),
+)
 evaluation_scope = meta.get("evaluation_scope", DEFAULT_EVALUATION_SCOPE)
 dashboard_summary = meta.get("dashboard_summary", {})
 evaluation_summary = meta.get("evaluation_summary", {})
@@ -355,24 +367,36 @@ if st.button("🔍 Перевірити"):
                 matched_signals = []
                 st.toast("⚡ Знайдено у ваших відгуках! Застосовано виправлення.", icon="🧠")
             else:
-                safe_rule_result = detect_safe_business_rule(user_input)
-                if safe_rule_result:
-                    prob = float(safe_rule_result["score"])
-                    prediction_source = safe_rule_result["decision_source"]
-                    rule_label = safe_rule_result["rule_label"]
-                    rule_reason = safe_rule_result.get("reason")
-                    matched_signals = safe_rule_result.get("matched_signals", [])
+                phishing_rule_result = detect_lookalike_domain_rule(user_input)
+                if phishing_rule_result:
+                    prob = float(phishing_rule_result["score"])
+                    prediction_source = phishing_rule_result["decision_source"]
+                    rule_label = phishing_rule_result["rule_label"]
+                    rule_reason = phishing_rule_result.get("reason")
+                    matched_signals = phishing_rule_result.get("matched_signals", [])
                     st.toast(
-                        f"🧾 Safe-business rule: {rule_label}",
-                        icon="🛡️",
+                        f"🚨 Anti-phishing rule: {rule_label}",
+                        icon="🛑",
                     )
                 else:
-                    features = preprocessor.transform([user_input])
-                    prob = classifier.predict_proba(features)[0][1]
-                    prediction_source = "model"
-                    rule_label = None
-                    rule_reason = None
-                    matched_signals = []
+                    safe_rule_result = detect_safe_business_rule(user_input)
+                    if safe_rule_result:
+                        prob = float(safe_rule_result["score"])
+                        prediction_source = safe_rule_result["decision_source"]
+                        rule_label = safe_rule_result["rule_label"]
+                        rule_reason = safe_rule_result.get("reason")
+                        matched_signals = safe_rule_result.get("matched_signals", [])
+                        st.toast(
+                            f"🧾 Safe-business rule: {rule_label}",
+                            icon="🛡️",
+                        )
+                    else:
+                        features = preprocessor.transform([user_input])
+                        prob = classifier.predict_proba(features)[0][1]
+                        prediction_source = "model"
+                        rule_label = None
+                        rule_reason = None
+                        matched_signals = []
 
             predicted_is_spam = prob >= current_threshold
             
@@ -406,6 +430,15 @@ if st.session_state.analyzed:
     if prediction_source == "safe_business_rule" and rule_label:
         st.info(f"Результат зафіксовано safe-business rule: {rule_label}")
         with st.expander("Чому лист визнано безпечним", expanded=True):
+            if rule_reason:
+                st.caption(rule_reason)
+            if matched_signals:
+                st.write("Знайдені сигнали:")
+                for signal in matched_signals:
+                    st.code(signal)
+    elif prediction_source == "phishing_domain_rule" and rule_label:
+        st.error(f"Результат зафіксовано anti-phishing rule: {rule_label}")
+        with st.expander("Чому лист визнано фішинговим", expanded=True):
             if rule_reason:
                 st.caption(rule_reason)
             if matched_signals:

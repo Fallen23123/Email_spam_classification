@@ -4,6 +4,7 @@ from api import (
     build_analysis_cache_key,
     clear_analysis_cache,
     get_cached_analysis,
+    resolve_decision_threshold,
     set_cached_analysis,
     should_include_explainability,
 )
@@ -48,6 +49,10 @@ class ApiPerformanceTests(unittest.TestCase):
         self.assertIsNotNone(cached)
         self.assertEqual(cached["spam_score"], 0.07)
         self.assertEqual(cached["decision_source"], "model")
+
+    def test_decision_threshold_has_minimum_floor(self):
+        self.assertEqual(resolve_decision_threshold(0.17), 0.5)
+        self.assertEqual(resolve_decision_threshold(0.73), 0.73)
 
 
 if __name__ == "__main__":

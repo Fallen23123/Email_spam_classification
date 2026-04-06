@@ -13,10 +13,10 @@ from datetime import datetime
 from typing import Optional
 from scipy.sparse import hstack
 
-from config import DEFAULT_THRESHOLD, RETRAIN_THRESHOLD
+from config import DEFAULT_THRESHOLD, MIN_DECISION_THRESHOLD, RETRAIN_THRESHOLD
 from preprocessor import FREE_MAIL_DOMAINS
 from retrain_utils import load_feedback_rows_from_db, run_holdout_retrain
-from safe_mail_rules import detect_safe_business_rule
+from safe_mail_rules import detect_lookalike_domain_rule, detect_safe_business_rule
 
 app = FastAPI()
 
@@ -78,7 +78,7 @@ def reload_model():
 
 def get_current_threshold():
     with MODEL_LOCK:
-        return float(meta.get("threshold", DEFAULT_THRESHOLD))
+        return resolve_decision_threshold(meta.get("threshold", DEFAULT_THRESHOLD))
 
 
 def get_model_snapshot():
@@ -153,6 +153,10 @@ def merge_runtime_status(result):
 
 def elapsed_ms(start_time):
     return round((time.perf_counter() - start_time) * 1000, 3)
+
+
+def resolve_decision_threshold(raw_threshold):
+    return max(float(raw_threshold), float(MIN_DECISION_THRESHOLD))
 
 
 def compose_analysis_text(text, sender=None, sender_domain=None):
@@ -386,6 +390,10 @@ def extract_subject_body_signals(text: str):
 def extract_metadata_signals(text: str):
     """Пояснює URL/domain/sender-ризики окремо від текстових keywords."""
     try:
+        phishing_rule_result = detect_lookalike_domain_rule(text)
+        if phishing_rule_result:
+            return phishing_rule_result.get("matched_signals", [])[:6]
+
         pipeline_snapshot, _ = get_model_snapshot()
         preprocessor = pipeline_snapshot.named_steps["prep"]
         sender_metadata = preprocessor.extract_sender_metadata(text)
@@ -645,25 +653,31 @@ def analyze_text(request: TextRequest):
         print(f"Using hot memory for: {text[:30]}...")
     else:
         rule_check_started_at = time.perf_counter()
-        safe_rule_result = detect_safe_business_rule(raw_text)
+        phishing_rule_result = detect_lookalike_domain_rule(text)
+        if phishing_rule_result:
+            rule_result = phishing_rule_result
+            rule_explainability_reason = "phishing_domain_rule"
+        else:
+            rule_result = detect_safe_business_rule(raw_text)
+            rule_explainability_reason = "safe_business_rule"
         rule_check_ms = elapsed_ms(rule_check_started_at)
-        if safe_rule_result:
+        if rule_result:
             result = {
-                "score": float(safe_rule_result["score"]),
+                "score": float(rule_result["score"]),
                 "keywords": [],
                 "subject_signals": [],
                 "body_signals": [],
                 "subject_safe_signals": [],
                 "body_safe_signals": [],
                 "metadata_signals": extract_metadata_signals(text) if include_explainability else [],
-                "decision_source": safe_rule_result["decision_source"],
-                "rule_name": safe_rule_result["rule_name"],
-                "rule_label": safe_rule_result["rule_label"],
-                "rule_matches": safe_rule_result["rule_matches"],
-                "reason": safe_rule_result.get("reason"),
-                "matched_signals": safe_rule_result.get("matched_signals", []),
+                "decision_source": rule_result["decision_source"],
+                "rule_name": rule_result["rule_name"],
+                "rule_label": rule_result["rule_label"],
+                "rule_matches": rule_result["rule_matches"],
+                "reason": rule_result.get("reason"),
+                "matched_signals": rule_result.get("matched_signals", []),
                 "explainability_included": False,
-                "explainability_reason": "deferred_safe_business_rule",
+                "explainability_reason": f"deferred_{rule_explainability_reason}",
                 "timings_ms": {
                     "hot_memory_lookup_ms": hot_memory_lookup_ms,
                     "rule_check_ms": rule_check_ms,
@@ -727,7 +741,8 @@ def get_model_meta():
     with MODEL_LOCK:
         return {
             "model_name": meta.get("model_name"),
-            "threshold": meta.get("threshold"),
+            "threshold": get_current_threshold(),
+            "raw_model_threshold": meta.get("threshold"),
             "last_retrain": meta.get("last_retrain"),
             "evaluation_scope": meta.get("evaluation_scope"),
             "feedback_training_size": meta.get("feedback_training_size", 0),

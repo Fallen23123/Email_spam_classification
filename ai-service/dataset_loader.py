@@ -42,6 +42,21 @@ SUBJECT_COLUMN_CANDIDATES = (
     "header",
 )
 
+SENDER_COLUMN_CANDIDATES = (
+    "sender",
+    "from",
+    "from_email",
+    "from_address",
+    "sender_email",
+)
+
+SENDER_DOMAIN_COLUMN_CANDIDATES = (
+    "sender_domain",
+    "from_domain",
+    "domain",
+    "mail_domain",
+)
+
 SUBJECT_MARKER = "subjecttoken"
 BODY_MARKER = "bodytoken"
 
@@ -129,10 +144,10 @@ def normalize_text_series(series):
     )
 
 
-def build_subject_body_text(subject_series, body_series):
+def build_subject_body_text(subject_series, body_series, sender_series=None, sender_domain_series=None):
     subject_series = normalize_text_series(subject_series)
     body_series = normalize_text_series(body_series)
-    return (
+    text = (
         SUBJECT_MARKER
         + " "
         + subject_series
@@ -142,11 +157,31 @@ def build_subject_body_text(subject_series, body_series):
         + body_series
     ).str.strip()
 
+    if sender_series is not None:
+        sender_series = normalize_text_series(sender_series)
+        text = np.where(
+            sender_series.str.len() > 0,
+            "X-Sender: " + sender_series + "\n" + text,
+            text,
+        )
+
+    if sender_domain_series is not None:
+        sender_domain_series = normalize_text_series(sender_domain_series)
+        text = np.where(
+            sender_domain_series.str.len() > 0,
+            "X-Sender-Domain: " + sender_domain_series + "\n" + pd.Series(text, index=subject_series.index).astype(str),
+            text,
+        )
+
+    return pd.Series(text, index=subject_series.index, dtype="object").str.strip()
+
 
 def standardize_dataset_frame(df, source_name):
     label_column = find_matching_column(df.columns, LABEL_COLUMN_CANDIDATES)
     text_column = find_matching_column(df.columns, TEXT_COLUMN_CANDIDATES)
     subject_column = find_matching_column(df.columns, SUBJECT_COLUMN_CANDIDATES)
+    sender_column = find_matching_column(df.columns, SENDER_COLUMN_CANDIDATES)
+    sender_domain_column = find_matching_column(df.columns, SENDER_DOMAIN_COLUMN_CANDIDATES)
 
     if label_column is None:
         raise ValueError(
@@ -169,11 +204,28 @@ def standardize_dataset_frame(df, source_name):
         subject_text = pd.Series([""] * len(df), index=df.index, dtype="object")
         body_text = normalize_text_series(df[active_text_column])
 
-    text = build_subject_body_text(subject_text, body_text)
+    if sender_column is not None:
+        sender_text = normalize_text_series(df[sender_column])
+    else:
+        sender_text = pd.Series([""] * len(df), index=df.index, dtype="object")
+
+    if sender_domain_column is not None:
+        sender_domain_text = normalize_text_series(df[sender_domain_column])
+    else:
+        sender_domain_text = pd.Series([""] * len(df), index=df.index, dtype="object")
+
+    text = build_subject_body_text(
+        subject_text,
+        body_text,
+        sender_series=sender_text,
+        sender_domain_series=sender_domain_text,
+    )
 
     prepared = pd.DataFrame(
         {
             "label": df[label_column].map(normalize_label),
+            "sender": sender_text,
+            "sender_domain": sender_domain_text,
             "subject": subject_text,
             "body": body_text,
             "text": text,

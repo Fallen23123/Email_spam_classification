@@ -13,13 +13,19 @@ class SubjectBodyAwareFeatureTests(unittest.TestCase):
                 "label": ["ham"],
                 "subject": ["Invoice #2048 ready"],
                 "body": ["Thank you for your purchase. Receipt is attached."],
+                "sender": ["billing@paypal.com"],
+                "sender_domain": ["paypal.com"],
             }
         )
 
         prepared = standardize_dataset_frame(frame, source_name="sample.csv")
 
+        self.assertEqual(prepared.iloc[0]["sender"], "billing@paypal.com")
+        self.assertEqual(prepared.iloc[0]["sender_domain"], "paypal.com")
         self.assertEqual(prepared.iloc[0]["subject"], "Invoice #2048 ready")
         self.assertEqual(prepared.iloc[0]["body"], "Thank you for your purchase. Receipt is attached.")
+        self.assertIn("X-Sender: billing@paypal.com", prepared.iloc[0]["text"])
+        self.assertIn("X-Sender-Domain: paypal.com", prepared.iloc[0]["text"])
         self.assertIn(SUBJECT_MARKER, prepared.iloc[0]["text"])
         self.assertIn(BODY_MARKER, prepared.iloc[0]["text"])
 
