@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 // 🟢 Імпорт моделей
 use App\Models\Feedback;
@@ -80,11 +82,22 @@ Route::post('/check-spam', function (Request $request) {
             $threshold = $data['base_threshold'] ?? 0.55;
 
             // 💾 ЗБЕРІГАЄМО ЗАПИС У БАЗУ ДАНИХ ДЛЯ ПОТОЧНОГО КОРИСТУВАЧА
-            ScanHistory::create([
+            $historyPayload = [
                 'user_id' => auth()->id(),
                 'score' => $score,
                 'is_spam' => $score >= $threshold,
-            ]);
+            ];
+
+            // Поки міграція з email_preview не застосована, не валимо аналіз через відсутню колонку.
+            if (Schema::hasColumn('scan_histories', 'email_preview')) {
+                $historyPayload['email_preview'] = Str::limit(trim(preg_replace('/\s+/u', ' ', $text ?? '')), 220, '...');
+            }
+
+            if (Schema::hasColumn('scan_histories', 'email_text')) {
+                $historyPayload['email_text'] = $text;
+            }
+
+            ScanHistory::create($historyPayload);
 
             return $data;
         }

@@ -118,6 +118,75 @@ const technicalMetricDescriptions = {
     retrainStatus: 'Поточний стан автоперенавчання моделі у фоні.',
 };
 
+const buildHistoryPreview = (value) => {
+    if (!value) return '';
+
+    return value.replace(/\s+/g, ' ').trim().slice(0, 140);
+};
+
+const escapeHtml = (value = '') =>
+    value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+const getRiskBand = (score, threshold) => {
+    if (score == null || threshold == null) return 'safe';
+    if (score >= threshold) return 'spam';
+    if (score >= Math.max(0.35, threshold - 0.15)) return 'borderline';
+    return 'safe';
+};
+
+const resultToneMap = {
+    safe: {
+        label: 'Повідомлення безпечне',
+        chip: 'Безпечний сценарій',
+        progressClassName: 'bg-gradient-to-r from-emerald-300 via-lime-300 to-emerald-400',
+        panelClassName: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100/90',
+        chipClassName: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
+        accentClassName: 'text-emerald-200',
+    },
+    borderline: {
+        label: 'Потребує уваги',
+        chip: 'Прикордонний випадок',
+        progressClassName: 'bg-gradient-to-r from-amber-300 via-yellow-300 to-orange-300',
+        panelClassName: 'border-amber-500/20 bg-amber-500/5 text-amber-100/90',
+        chipClassName: 'border-amber-400/30 bg-amber-400/10 text-amber-100',
+        accentClassName: 'text-amber-200',
+    },
+    spam: {
+        label: 'Високий ризик',
+        chip: 'Потенційний спам',
+        progressClassName: 'bg-gradient-to-r from-rose-300 via-orange-300 to-amber-300',
+        panelClassName: 'border-rose-500/20 bg-rose-500/5 text-rose-100/90',
+        chipClassName: 'border-rose-400/30 bg-rose-400/10 text-rose-100',
+        accentClassName: 'text-rose-200',
+    },
+};
+
+const historyToneMap = {
+    safe: {
+        label: 'Safe',
+        icon: '✓',
+        iconClassName: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-100',
+        pillClassName: 'bg-emerald-400/20 text-emerald-100',
+    },
+    borderline: {
+        label: 'Borderline',
+        icon: '!',
+        iconClassName: 'border-amber-400/25 bg-amber-400/10 text-amber-100',
+        pillClassName: 'bg-amber-400/20 text-amber-100',
+    },
+    spam: {
+        label: 'Spam',
+        icon: '!',
+        iconClassName: 'border-rose-400/25 bg-rose-400/10 text-rose-100',
+        pillClassName: 'bg-rose-400/20 text-rose-100',
+    },
+};
+
 const renderTechnicalMetricRow = (label, value, description, valueClassName = 'text-white') => (
     <div className="group relative flex justify-between items-center bg-black/20 p-3 rounded-lg border border-white/5">
         <div className="flex items-center gap-2">
@@ -148,15 +217,28 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
     // ОНОВЛЕНО: Історія конвертується з формату бази даних і одразу відображається
     const [history, setHistory] = useState(() => {
         return initialHistory.map(item => ({
+            id: item.id,
+            analyzedAt: new Date(item.created_at).toLocaleString('uk-UA', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            }),
             time: new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             isSpam: item.is_spam,
-            score: item.score
+            score: item.score,
+            preview: buildHistoryPreview(item.email_preview || ''),
+            fullText: item.email_text || item.email_preview || '',
         }));
     });
     
     const [feedbackGiven, setFeedbackGiven] = useState(false);
     const [uploadedFileName, setUploadedFileName] = useState('');
     const [retrainStatus, setRetrainStatus] = useState(null);
+    const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+    const [copyStatus, setCopyStatus] = useState('');
+    const [historySearch, setHistorySearch] = useState('');
     
     // Меню закрите за замовчуванням
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -241,7 +323,21 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
 
             const now = new Date();
             setHistory((prev) =>
-                [{ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), isSpam, score }, ...prev].slice(0, 10),
+                [{
+                    id: `session-${Date.now()}`,
+                    analyzedAt: now.toLocaleString('uk-UA', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                    }),
+                    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    isSpam,
+                    score,
+                    preview: buildHistoryPreview(text),
+                    fullText: text,
+                }, ...prev].slice(0, 10),
             );
             setFeedbackGiven(false);
         } catch (error) {
@@ -278,6 +374,8 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
     const thresholdPercent = result ? (result.threshold * 100).toFixed(2) : '56.00';
     const isSpam = result?.isSpam;
     const progress = result ? result.score * 100 : 36;
+    const riskBand = result ? getRiskBand(result.score, result.threshold) : 'safe';
+    const resultTone = resultToneMap[riskBand];
     const decisionBadge = decisionSourceBadges[result?.decisionSource || 'model'] || decisionSourceBadges.model;
     const readableSummary = buildReadableSummary(result);
     const retrainSummary = buildRetrainSummary(retrainStatus);
@@ -286,6 +384,166 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
     const donutPercent = stats.total ? ((stats.safe / stats.total) * 100).toFixed(1) : '28.1';
     const donutStyle = {
         background: `conic-gradient(#7ee695 0 ${hamRatio}%, #4ea6ad ${hamRatio}% ${Math.min(hamRatio + spamRatio, 100)}%, #203247 ${Math.min(hamRatio + spamRatio, 100)}% 100%)`,
+    };
+    const normalizedHistorySearch = historySearch.trim().toLowerCase();
+    const filteredHistory = history.filter((item) => {
+        if (!normalizedHistorySearch) return true;
+
+        const haystack = [
+            item.preview,
+            item.fullText,
+            item.time,
+            item.isSpam ? 'spam спам' : 'safe безпечне',
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+        return haystack.includes(normalizedHistorySearch);
+    });
+    const resultConclusion = result
+        ? riskBand === 'spam'
+            ? `${resultPercent}%: система класифікувала повідомлення як потенційний спам. Рекомендуємо не переходити за посиланнями та перевірити домен відправника.`
+            : riskBand === 'borderline'
+              ? `${resultPercent}%: це прикордонний випадок. Лист поки віднесено до не спаму, але він має частину підозрілих сигналів і потребує уважної перевірки.`
+              : `${resultPercent}%: система класифікувала повідомлення як не спам. Текст виглядає безпечним за поточними сигналами.`
+        : '';
+
+    const buildReportText = () => {
+        if (!result) return '';
+
+        const lines = [
+            'ЗВІТ АНАЛІЗУ ЛИСТА',
+            `Дата: ${new Date().toLocaleString('uk-UA')}`,
+            `Користувач: ${auth.user.name}`,
+            '',
+            'РЕЗУЛЬТАТ',
+            `Статус: ${resultTone.label}`,
+            `Spam Score: ${result.score.toFixed(6)}`,
+            `Поріг: ${result.threshold.toFixed(2)}`,
+            `Джерело рішення: ${decisionBadge.label}`,
+            result.ruleLabel ? `Правило: ${result.ruleLabel}` : null,
+            '',
+            'КОРОТКИЙ ВИСНОВОК',
+            readableSummary || resultConclusion,
+            '',
+            'ТЕКСТ ЛИСТА',
+            text || 'Немає тексту',
+        ].filter(Boolean);
+
+        return lines.join('\n');
+    };
+
+    const handleCopySummary = async () => {
+        if (!result) return;
+
+        try {
+            const summaryText = readableSummary || resultConclusion;
+
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(summaryText);
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = summaryText;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-9999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                textArea.remove();
+            }
+
+            setCopyStatus('Короткий висновок скопійовано');
+            window.setTimeout(() => setCopyStatus(''), 2200);
+        } catch (error) {
+            console.error('Помилка копіювання:', error);
+            setCopyStatus('Не вдалося скопіювати');
+            window.setTimeout(() => setCopyStatus(''), 2200);
+        }
+    };
+
+    const handleDownloadTxt = () => {
+        if (!result) return;
+
+        const blob = new Blob([`\uFEFF${buildReportText()}`], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `spam-report-${Date.now()}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadPdf = () => {
+        if (!result) return;
+
+        const reportWindow = window.open('', '_blank', 'width=960,height=760');
+        if (!reportWindow) {
+            alert('Браузер заблокував вікно для PDF. Дозволь pop-up і спробуй ще раз.');
+            return;
+        }
+
+        const html = `
+            <!DOCTYPE html>
+            <html lang="uk">
+                <head>
+                    <meta charset="UTF-8" />
+                    <title>Spam report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 32px; color: #0f172a; }
+                        h1 { margin: 0 0 8px; font-size: 28px; }
+                        h2 { margin: 28px 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: #334155; }
+                        .meta { color: #475569; margin-bottom: 18px; }
+                        .panel { border: 1px solid #cbd5e1; border-radius: 16px; padding: 18px; margin-top: 12px; }
+                        .chip { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #e2e8f0; font-size: 12px; font-weight: bold; }
+                        pre { white-space: pre-wrap; word-break: break-word; font-family: Arial, sans-serif; line-height: 1.7; margin: 0; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Звіт аналізу листа</h1>
+                    <div class="meta">Дата: ${escapeHtml(new Date().toLocaleString('uk-UA'))}</div>
+                    <div class="panel">
+                        <span class="chip">${escapeHtml(resultTone.label)}</span>
+                        <h2>Короткий висновок</h2>
+                        <p>${escapeHtml(readableSummary || resultConclusion)}</p>
+                        <h2>Технічні метрики</h2>
+                        <p>Spam Score: ${escapeHtml(result.score.toFixed(6))}</p>
+                        <p>Поріг: ${escapeHtml(result.threshold.toFixed(2))}</p>
+                        <p>Джерело рішення: ${escapeHtml(decisionBadge.label)}</p>
+                        ${result.ruleLabel ? `<p>Правило: ${escapeHtml(result.ruleLabel)}</p>` : ''}
+                        <h2>Текст листа</h2>
+                        <pre>${escapeHtml(text || 'Немає тексту')}</pre>
+                    </div>
+                    <script>
+                        window.onload = function () {
+                            window.print();
+                        };
+                    </script>
+                </body>
+            </html>
+        `;
+
+        reportWindow.document.open();
+        reportWindow.document.write(html);
+        reportWindow.document.close();
+    };
+
+    const handleRepeatAnalysis = (item) => {
+        const nextText = item.fullText || item.preview;
+        if (!nextText) return;
+
+        setText(nextText);
+        setUploadedFileName('');
+        setSelectedHistoryItem(null);
+
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     // НАЧИНКА ПАНЕЛІ
@@ -353,27 +611,89 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                 <div className="my-6 border-t border-white/10" />
 
                 <p className="mb-4 text-xl font-semibold text-white">Історія перевірок</p>
+                <div className="mb-4">
+                    <input
+                        type="text"
+                        value={historySearch}
+                        onChange={(e) => setHistorySearch(e.target.value)}
+                        placeholder="Пошук по тексту, статусу або часу..."
+                        className="w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/30 focus:bg-black/35"
+                    />
+                </div>
                 <div className="space-y-3 pb-8">
                     {history.length === 0 ? (
                         <div className="rounded-[1.2rem] bg-white/5 border border-white/10 px-4 py-4 text-sm leading-6 text-slate-400">
                             Історія ще порожня. Після першого аналізу тут з’являться результати.
                         </div>
+                    ) : filteredHistory.length === 0 ? (
+                        <div className="rounded-[1.2rem] border border-white/10 bg-white/5 px-4 py-4 text-sm leading-6 text-slate-400">
+                            За запитом нічого не знайдено. Спробуй інше слово або коротший фрагмент.
+                        </div>
                     ) : (
-                        history.map((item, idx) => (
-                            <div key={`${item.time}-${idx}`} className="rounded-[1.2rem] bg-white/5 border border-white/10 px-4 py-4">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                        <p className="text-sm text-slate-300">Сьогодні о {item.time}</p>
-                                        <p className={`mt-2 text-base font-medium ${item.isSpam ? 'text-rose-300' : 'text-cyan-300'}`}>
-                                            {item.isSpam ? 'Спам' : 'Безпечне'} {(item.score * 100).toFixed(1)}%
-                                        </p>
+                        filteredHistory.map((item, idx) => {
+                            const historyBand = getRiskBand(item.score, 0.5);
+                            const historyTone = historyToneMap[historyBand];
+
+                            return (
+                                <div
+                                    key={item.id || `${item.time}-${idx}`}
+                                    className="rounded-[1.2rem] border border-white/10 bg-white/5 px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.16)] transition-all hover:border-cyan-300/20 hover:bg-white/[0.07]"
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <div className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-bold ${historyTone.iconClassName}`}>
+                                            {historyTone.icon}
+                                        </div>
+
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">
+                                                        {item.analyzedAt || `Сьогодні о ${item.time}`}
+                                                    </p>
+                                                    <p className={`mt-2 text-base font-medium ${
+                                                        historyBand === 'spam'
+                                                            ? 'text-rose-300'
+                                                            : historyBand === 'borderline'
+                                                              ? 'text-amber-300'
+                                                              : 'text-cyan-300'
+                                                    }`}>
+                                                        {historyBand === 'spam'
+                                                            ? 'Спам'
+                                                            : historyBand === 'borderline'
+                                                              ? 'Прикордонний'
+                                                              : 'Безпечне'} {(item.score * 100).toFixed(1)}%
+                                                    </p>
+                                                </div>
+                                                <span className={`shrink-0 rounded-lg px-2 py-1 text-xs ${historyTone.pillClassName}`}>
+                                                    {historyTone.label}
+                                                </span>
+                                            </div>
+
+                                            <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">
+                                                {item.preview || 'Для цього запису текстовий preview ще недоступний.'}
+                                            </p>
+
+                                            <div className="mt-4 flex flex-wrap gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedHistoryItem(item)}
+                                                    className="inline-flex items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/18"
+                                                >
+                                                    Відкрити деталі
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRepeatAnalysis(item)}
+                                                    className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-100 transition hover:bg-white/10"
+                                                >
+                                                    Повторити аналіз
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <span className={`rounded-lg px-2 py-1 text-xs ${item.isSpam ? 'bg-rose-400/20 text-rose-100' : 'bg-emerald-400/20 text-emerald-100'}`}>
-                                        {item.isSpam ? 'Spam' : 'Safe'}
-                                    </span>
                                 </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             </div>
@@ -555,14 +875,8 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                         <p className="text-sm text-slate-400">Ймовірність спаму</p>
                                         <p className="mt-3 text-6xl font-light text-white">{resultPercent}%</p>
                                         <div className="mt-4">
-                                            <span
-                                                className={`inline-flex rounded-xl border px-4 py-2.5 text-sm font-medium shadow-md ${
-                                                    isSpam
-                                                        ? 'border-amber-400/40 bg-amber-400/10 text-amber-300'
-                                                        : 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
-                                                }`}
-                                            >
-                                                {result ? (isSpam ? '⚠️ Висока загроза (Спам)' : '✅ Повідомлення безпечне') : 'Очікуємо аналіз...'}
+                                            <span className={`inline-flex rounded-xl border px-4 py-2.5 text-sm font-medium shadow-md ${resultTone.chipClassName}`}>
+                                                {result ? resultTone.label : 'Очікуємо аналіз...'}
                                             </span>
                                         </div>
                                         {result && (
@@ -577,18 +891,44 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                                 )}
                                             </div>
                                         )}
+                                        <div className="mt-5 flex flex-wrap items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={handleCopySummary}
+                                                disabled={!result}
+                                                className="inline-flex items-center justify-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/18 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                Скопіювати висновок
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleDownloadTxt}
+                                                disabled={!result}
+                                                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                Звіт TXT
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleDownloadPdf}
+                                                disabled={!result}
+                                                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                Звіт PDF
+                                            </button>
+                                            {copyStatus && (
+                                                <span className="text-sm text-cyan-200/90">{copyStatus}</span>
+                                            )}
+                                        </div>
                                     </div>
 
                                         <div>
                                             <p className="text-sm text-slate-300">Рівень підозрілості</p>
                                             <div className="mt-6 h-4 overflow-hidden rounded-full border border-white/20 bg-black/40 shadow-inner">
                                                 <div
-                                                    className="h-full rounded-full transition-all duration-1000 ease-out"
-                                                style={{ 
-                                                    width: result ? `${progress}%` : '0%', 
-                                                    backgroundColor: result ? `hsl(${120 - (progress * 1.2)}, 80%, 50%)` : 'transparent'
-                                                }}
-                                            />
+                                                    className={`h-full rounded-full transition-all duration-1000 ease-out ${result ? resultTone.progressClassName : ''}`}
+                                                    style={{ width: result ? `${progress}%` : '0%' }}
+                                                />
                                         </div>
 
                                             {result?.keywords && result.keywords.length > 0 && (
@@ -778,18 +1118,14 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                                                 </div>
                                             )}
 
-                                            <div
-                                                className={`mt-6 rounded-2xl border px-5 py-4 text-sm leading-relaxed ${
-                                                    isSpam
-                                                        ? 'border-amber-500/20 bg-amber-500/5 text-amber-100/90'
-                                                    : 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100/90'
-                                            }`}
-                                        >
+                                            <div className={`mt-6 rounded-2xl border px-5 py-4 text-sm leading-relaxed ${resultTone.panelClassName}`}>
                                             {result ? (
-                                                isSpam ? (
-                                                    <p>{resultPercent}% (вищий рівень): система класифікувала повідомлення як потенційний спам. Рекомендуємо не переходити за посиланнями.</p>
+                                                riskBand === 'spam' ? (
+                                                    <p>{resultPercent}%: система класифікувала повідомлення як потенційний спам. Рекомендуємо не переходити за посиланнями та перевірити домен відправника.</p>
+                                                ) : riskBand === 'borderline' ? (
+                                                    <p>{resultPercent}%: це прикордонний випадок. Лист поки віднесено до не спаму, але він має частину підозрілих сигналів і потребує уважної перевірки.</p>
                                                 ) : (
-                                                    <p>{resultPercent}% (низький рівень): система класифікувала повідомлення як НЕ СПАМ. Текст виглядає безпечно.</p>
+                                                    <p>{resultPercent}%: система класифікувала повідомлення як не спам. Текст виглядає безпечним за поточними сигналами.</p>
                                                 )
                                             ) : (
                                                 <p className="text-slate-500 italic">Після аналізу тут з’явиться короткий висновок моделі.</p>
@@ -955,6 +1291,57 @@ export default function Dashboard({ auth, initialHistory = [], initialStats = { 
                         </div>
                     </main>
                 </div>
+
+                {selectedHistoryItem && (
+                    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
+                        <div
+                            className="absolute inset-0"
+                            onClick={() => setSelectedHistoryItem(null)}
+                        />
+                        <div className="relative z-10 w-full max-w-3xl rounded-[1.8rem] border border-white/10 bg-[#0f1826] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200/70">
+                                        Повний перегляд запису
+                                    </p>
+                                    <h3 className="mt-2 text-2xl font-semibold text-white">
+                                        Історія аналізу о {selectedHistoryItem.time}
+                                    </h3>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedHistoryItem(null)}
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                                    aria-label="Закрити перегляд історії"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="mt-5 flex flex-wrap items-center gap-3">
+                                <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                    selectedHistoryItem.isSpam
+                                        ? 'border-rose-400/20 bg-rose-400/10 text-rose-100'
+                                        : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100'
+                                }`}>
+                                    {selectedHistoryItem.isSpam ? 'Spam' : 'Safe'}
+                                </span>
+                                <span className="inline-flex rounded-full border border-cyan-300/15 bg-cyan-300/8 px-3 py-1.5 text-xs font-medium text-cyan-100">
+                                    Score {(selectedHistoryItem.score * 100).toFixed(1)}%
+                                </span>
+                            </div>
+
+                            <div className="mt-6 rounded-[1.4rem] border border-white/10 bg-black/20 p-5">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                    Текст листа
+                                </p>
+                                <div className="mt-4 max-h-[45vh] overflow-y-auto rounded-[1rem] border border-white/6 bg-black/30 p-4 text-sm leading-7 text-slate-200 whitespace-pre-wrap">
+                                    {selectedHistoryItem.fullText || selectedHistoryItem.preview || 'Для цього старого запису повний текст ще не збережено.'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </AuthenticatedLayout>
         </>
     );
